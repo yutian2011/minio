@@ -91,8 +91,12 @@ func commonSetDriveCount(divisibleSize uint64, setCounts []uint64) (setSize uint
 // we also use uniform number of drives common across all ellipses patterns.
 func possibleSetCountsWithSymmetry(setCounts []uint64, argPatterns []ellipses.ArgPattern) []uint64 {
 	newSetCounts := make(map[uint64]struct{})
+	//假如公约数为1, setCounts为[2,16]
+	//假如没有省略号, volume为4, 此时, setCounts=[4 8 12 16], argPatterns=nil
 	for _, ss := range setCounts {
 		var symmetry bool
+		//如果可能的最大公约数倍数. 最大公约数 * 1/2/3倍
+		//再检查一下, 是否符合. 如果最大公约数为1, 反而会有问题.
 		for _, argPattern := range argPatterns {
 			for _, p := range argPattern {
 				if uint64(len(p.Seq)) > ss {
@@ -105,6 +109,7 @@ func possibleSetCountsWithSymmetry(setCounts []uint64, argPatterns []ellipses.Ar
 		// With no arg patterns, it is expected that user knows
 		// the right symmetry, so either ellipses patterns are
 		// provided (recommended) or no ellipses patterns.
+		//argPatterns == nil 对应 没有省略号的场景.
 		if _, ok := newSetCounts[ss]; !ok && (symmetry || argPatterns == nil) {
 			newSetCounts[ss] = struct{}{}
 		}
@@ -119,10 +124,12 @@ func possibleSetCountsWithSymmetry(setCounts []uint64, argPatterns []ellipses.Ar
 	// eyes that we prefer a sorted setCount slice for the
 	// subsequent function to figure out the right common
 	// divisor, it avoids loops.
+	//排序.
 	sort.Slice(setCounts, func(i, j int) bool {
 		return setCounts[i] < setCounts[j]
 	})
 
+	//假如没有省略号, volume为4, 此时, 返回也是 setCounts=[4 8 12 16]
 	return setCounts
 }
 
@@ -144,7 +151,13 @@ func getSetIndexes(args []string, totalSizes []uint64, customSetDriveCount uint6
 		}
 	}
 
+	//totalSizes是每个arg上磁盘的数量
+	//找最大公约数. 所有args都能整除的.
+	// 这里的一个arg应该就是一个serverPool.
+	//每个serverPool 会有节点数量, 和节点磁盘数量, 节点数量*节点磁盘数量=serverPool 总磁盘数.
+	//也可能没有, 就是1.
 	commonSize := getDivisibleSize(totalSizes)
+	//所有arg中最大公约数
 	possibleSetCounts := func(setSize uint64) (ss []uint64) {
 		for _, s := range setSizes {
 			if setSize%s == 0 {
@@ -154,6 +167,8 @@ func getSetIndexes(args []string, totalSizes []uint64, customSetDriveCount uint6
 		return ss
 	}
 
+	//获取可能的ec set数量. 获取的就是commonSize的倍数. 最大公约数的倍数
+	//如果最大公约数为1, 则需要过滤setCounts. 下面 possibleSetCountsWithSymmetry
 	setCounts := possibleSetCounts(commonSize)
 	if len(setCounts) == 0 {
 		msg := fmt.Sprintf("Incorrect number of endpoints provided %s, number of drives %d is not divisible by any supported erasure set sizes %d", args, commonSize, setSizes)
@@ -163,6 +178,7 @@ func getSetIndexes(args []string, totalSizes []uint64, customSetDriveCount uint6
 	var setSize uint64
 	// Custom set drive count allows to override automatic distribution.
 	// only meant if you want to further optimize drive distribution.
+	//如果自定义了ec set数量, 则检查是否合法.
 	if customSetDriveCount > 0 {
 		msg := fmt.Sprintf("Invalid set drive count. Acceptable values for %d number drives are %d", commonSize, setCounts)
 		var found bool
@@ -171,6 +187,7 @@ func getSetIndexes(args []string, totalSizes []uint64, customSetDriveCount uint6
 				found = true
 			}
 		}
+		//如果在可能的set集合中找不到 自定义的ec set的数量, 则返回错误, 不合法.
 		if !found {
 			return nil, config.ErrInvalidErasureSetSize(nil).Msg(msg)
 		}
@@ -179,7 +196,10 @@ func getSetIndexes(args []string, totalSizes []uint64, customSetDriveCount uint6
 		setSize = customSetDriveCount
 		globalCustomErasureDriveCount = true
 	} else {
+		//如果没有自定义
 		// Returns possible set counts with symmetry.
+		//setCounts 最大公约数的倍数(所有serverPool的)
+		//possibleSetCountsWithSymmetry 再次检查了每个serverPool上的节点数和磁盘数余除为0
 		setCounts = possibleSetCountsWithSymmetry(setCounts, argPatterns)
 
 		if len(setCounts) == 0 {
@@ -262,6 +282,7 @@ func parseEndpointSet(customSetDriveCount uint64, args ...string) (ep endpointSe
 		argPatterns[i] = patterns
 	}
 
+	//getTotalSizes 返回每个arg(volumes)的磁盘数量
 	ep.setIndexes, err = getSetIndexes(args, getTotalSizes(argPatterns), customSetDriveCount, argPatterns)
 	if err != nil {
 		return endpointSet{}, config.ErrInvalidErasureEndpoints(nil).Msg(err.Error())
@@ -279,6 +300,8 @@ func parseEndpointSet(customSetDriveCount uint64, args ...string) (ep endpointSe
 // This applies to even distributed setup syntax as well.
 func GetAllSets(args ...string) ([][]string, error) {
 	var customSetDriveCount uint64
+	//minio MINIO_ERASURE_SET_DRIVE_COUNT 每个ec集合中有几个磁盘数量, 可以通过环境变量指定.
+	//
 	if v := env.Get(EnvErasureSetDriveCount, ""); v != "" {
 		driveCount, err := strconv.Atoi(v)
 		if err != nil {
@@ -288,11 +311,17 @@ func GetAllSets(args ...string) ([][]string, error) {
 	}
 
 	var setArgs [][]string
+	//如果传入的args没有省略号
 	if !ellipses.HasEllipses(args...) {
 		var setIndexes [][]uint64
 		// Check if we have more one args.
+		//有多个volume
 		if len(args) > 1 {
 			var err error
+			//没有省略号时, 多个volume, totalSizes就是一个元素的数组, 数组长度为volume数量.
+			//假如有4个volume
+			//commonSize = volume数量.
+			//setCounts = 4 8 12 16
 			setIndexes, err = getSetIndexes(args, []uint64{uint64(len(args))}, customSetDriveCount, nil)
 			if err != nil {
 				return nil, err
@@ -307,6 +336,8 @@ func GetAllSets(args ...string) ([][]string, error) {
 		}
 		setArgs = s.Get()
 	} else {
+		//传入的args有省略号时
+		//这里面对volume ec分多少个冗余集合 ec set.
 		s, err := parseEndpointSet(customSetDriveCount, args...)
 		if err != nil {
 			return nil, err
@@ -336,6 +367,7 @@ var globalCustomErasureDriveCount = false
 
 // CreateServerEndpoints - validates and creates new endpoints from input args, supports
 // both ellipses and without ellipses transparently.
+//args传递的是MINIO_VOLUMES
 func createServerEndpoints(serverAddr string, args ...string) (
 	endpointServerPools EndpointServerPools, setupType SetupType, err error,
 ) {
@@ -344,16 +376,22 @@ func createServerEndpoints(serverAddr string, args ...string) (
 	}
 
 	ok := true
+	//查看每一个参数是否有省略号
+	//查看volume中有没有省略号.
 	for _, arg := range args {
 		ok = ok && !ellipses.HasEllipses(arg)
 	}
 
 	// None of the args have ellipses use the old style.
+	//如果有没有省略号, 直接走旧流程
+	//就一个serverPool, 每个serverPool下有多个endpoint, 一个挂载点一个endpoint.
 	if ok {
 		setArgs, err := GetAllSets(args...)
 		if err != nil {
 			return nil, -1, err
 		}
+		//CreateEndpoints创建endPoint, 同时根据ep 返回不同的SetupType.
+		//创建ep时, 如果是路径则是isLocal=true, 如果是url, 且为当前节点, 也是isLocal=true
 		endpointList, newSetupType, err := CreateEndpoints(serverAddr, false, setArgs...)
 		if err != nil {
 			return nil, -1, err
@@ -369,12 +407,15 @@ func createServerEndpoints(serverAddr string, args ...string) (
 		return endpointServerPools, setupType, nil
 	}
 
+	//有省略号, 走后续流程.
 	var foundPrevLocal bool
 	for _, arg := range args {
+		//如果有多个volume, 但是当前volume 并没有省略号, 则为错误.
 		if !ellipses.HasEllipses(arg) && len(args) > 1 {
 			// TODO: support SNSD deployments to be decommissioned in future
 			return nil, -1, fmt.Errorf("all args must have ellipses for pool expansion (%w) args: %s", errInvalidArgument, args)
 		}
+		//每个serverPool都有自己的ec set
 		setArgs, err := GetAllSets(arg)
 		if err != nil {
 			return nil, -1, err

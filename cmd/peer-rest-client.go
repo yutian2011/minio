@@ -756,6 +756,7 @@ func newPeerRestClients(endpoints EndpointServerPools) (remote, all []*peerRESTC
 		// Only useful in distributed setups
 		return nil, nil
 	}
+	//这里会对endpoint进行排序
 	hosts := endpoints.hostsSorted()
 	remote = make([]*peerRESTClient, 0, len(hosts))
 	all = make([]*peerRESTClient, len(hosts))

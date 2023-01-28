@@ -225,6 +225,10 @@ func validateParity(ssParity, rrsParity, setDriveCount int) (err error) {
 //
 //	is returned, the caller is expected to choose the right parity
 //	at that point.
+//根据storage class 返回校验磁盘的数量
+//现在只有RRS和标准
+//根据环境变量来的, MINIO_STORAGE_CLASS_RRS MINIO_STORAGE_CLASS_STANDARD
+//如果没有则默认为标准. 如果时RRS, 没有配置 2 的校验数.
 func (sCfg Config) GetParityForSC(sc string) (parity int) {
 	ConfigLock.RLock()
 	defer ConfigLock.RUnlock()

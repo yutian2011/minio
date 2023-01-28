@@ -177,9 +177,11 @@ func NewEndpoint(arg string) (ep Endpoint, e error) {
 		// Only check if the arg is an ip address and ask for scheme since its absent.
 		// localhost, example.com, any FQDN cannot be disambiguated from a regular file path such as
 		// /mnt/export1. So we go ahead and start the minio server in FS modes in these cases.
+		//如果是ip时, 返回错误.
 		if isHostIP(arg) {
 			return ep, fmt.Errorf("invalid URL endpoint format: missing scheme http or https")
 		}
+		//应该是具体路径. 所以isLocal为true.
 		absArg, err := filepath.Abs(arg)
 		if err != nil {
 			return Endpoint{}, fmt.Errorf("absolute path failed %s", err)
@@ -455,6 +457,7 @@ func (endpoints Endpoints) UpdateIsLocal(foundPrevLocal bool) error {
 				// return err if not Docker or Kubernetes
 				// We use IsDocker() to check for Docker environment
 				// We use IsKubernetes() to check for Kubernetes environment
+				//根据主机名判断是否为当前节点.
 				isLocal, err := isLocalHost(endpoints[i].Hostname(),
 					endpoints[i].Port(),
 					globalMinioPort,
@@ -533,6 +536,7 @@ func NewEndpoints(args ...string) (endpoints Endpoints, err error) {
 		// All endpoints have to be same type and scheme if applicable.
 		//nolint:gocritic
 		if i == 0 {
+			//Type是指是本地路径还是url.
 			endpointType = endpoint.Type()
 			scheme = endpoint.Scheme
 		} else if endpoint.Type() != endpointType {
@@ -582,6 +586,7 @@ func CreateEndpoints(serverAddr string, foundLocal bool, args ...[]string) (Endp
 	_, serverAddrPort := mustSplitHostPort(serverAddr)
 
 	// For single arg, return FS setup.
+	//单盘时, 以前返回的是FSSetupType
 	if len(args) == 1 && len(args[0]) == 1 {
 		var endpoint Endpoint
 		endpoint, err = NewEndpoint(args[0][0])
@@ -595,6 +600,7 @@ func CreateEndpoints(serverAddr string, foundLocal bool, args ...[]string) (Endp
 			return endpoints, setupType, config.ErrInvalidEndpoint(nil).Msg("use path style endpoint for single node setup")
 		}
 		endpoints = append(endpoints, endpoint)
+		//以前这里是FSSetupType类型. 2022-5-31后变更
 		setupType = ErasureSDSetupType
 
 		// Check for cross device mounts if any.
@@ -605,8 +611,10 @@ func CreateEndpoints(serverAddr string, foundLocal bool, args ...[]string) (Endp
 		return endpoints, setupType, nil
 	}
 
+	//根据每个传入的volume进行创建endpoint
 	for _, iargs := range args {
 		// Convert args to endpoints
+		//根据每个创建endPoint
 		eps, err := NewEndpoints(iargs...)
 		if err != nil {
 			return endpoints, setupType, config.ErrInvalidErasureEndpoints(nil).Msg(err.Error())
@@ -625,21 +633,25 @@ func CreateEndpoints(serverAddr string, foundLocal bool, args ...[]string) (Endp
 	}
 
 	// Return Erasure setup when all endpoints are path style.
+	//如果是节点路径的方式, 则返回ErasureSetupType
 	if endpoints[0].Type() == PathEndpointType {
 		setupType = ErasureSetupType
 		return endpoints, setupType, nil
 	}
 
+	//如果是传入的url参数, 判断ep是否为local, 更新ep的isLocal参数.
 	if err = endpoints.UpdateIsLocal(foundLocal); err != nil {
 		return endpoints, setupType, config.ErrInvalidErasureEndpoints(nil).Msg(err.Error())
 	}
 
 	// Here all endpoints are URL style.
+	//如果所有都是url格式路径时会走到这里.
 	endpointPathSet := set.NewStringSet()
 	localEndpointCount := 0
 	localServerHostSet := set.NewStringSet()
 	localPortSet := set.NewStringSet()
 
+	//这里是url场景下, 且根据UpdateIsLocal函数更新了当前节点对应的ep.
 	for _, endpoint := range endpoints {
 		endpointPathSet.Add(endpoint.Path)
 		if endpoint.IsLocal {
@@ -657,17 +669,21 @@ func CreateEndpoints(serverAddr string, foundLocal bool, args ...[]string) (Endp
 	}
 
 	orchestrated := IsKubernetes() || IsDocker()
+	//如果不是容器化环境.
 	if !orchestrated {
 		// Check whether same path is not used in endpoints of a host on different port.
 		// Only verify this on baremetal setups, DNS is not available in orchestrated
 		// environments so we can't do much here.
 		{
+			//path对应相同的ip有哪些.
 			pathIPMap := make(map[string]set.StringSet)
+			//每个host对应的ip有哪些.
 			hostIPCache := make(map[string]set.StringSet)
 			for _, endpoint := range endpoints {
 				host := endpoint.Hostname()
 				hostIPSet, ok := hostIPCache[host]
 				if !ok {
+					//dns cache根据主机名字, 查找对应的ip.
 					hostIPSet, err = getHostIP(host)
 					if err != nil {
 						return endpoints, setupType, config.ErrInvalidErasureEndpoints(nil).Msg(fmt.Sprintf("host '%s' cannot resolve: %s", host, err))
@@ -689,8 +705,11 @@ func CreateEndpoints(serverAddr string, foundLocal bool, args ...[]string) (Endp
 
 	// Check whether same path is used for more than 1 local endpoints.
 	{
+		//本地的path
 		localPathSet := set.CreateStringSet()
 		for _, endpoint := range endpoints {
+			//根据是否为本地路径判断是否为local
+			//如果是当前节点, 但是传入的是url, 则IsLocal为false
 			if !endpoint.IsLocal {
 				continue
 			}
@@ -714,6 +733,7 @@ func CreateEndpoints(serverAddr string, foundLocal bool, args ...[]string) (Endp
 	}
 
 	// All endpoints are pointing to local host
+	//如果全是当前节点(可能是全是本地路径, 或者url全是当前节点), 说明只有一个节点, 多个挂载点的模式.
 	if len(endpoints) == localEndpointCount {
 		// If all endpoints have same port number, Just treat it as local erasure setup
 		// using URL style endpoints.
@@ -735,6 +755,7 @@ func CreateEndpoints(serverAddr string, foundLocal bool, args ...[]string) (Endp
 	}
 
 	// Error out if we have less than 2 unique servers.
+	//少于两个节点时不能开启分布式ec模式.
 	if len(uniqueArgs.ToSlice()) < 2 && setupType == DistErasureSetupType {
 		err := fmt.Errorf("Unsupported number of endpoints (%s), minimum number of servers cannot be less than 2 in distributed setup", endpoints)
 		return endpoints, setupType, err

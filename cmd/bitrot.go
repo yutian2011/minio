@@ -215,6 +215,7 @@ func bitrotVerify(r io.Reader, wantSize, partSize int64, algo BitrotAlgorithm, w
 //
 // bitrotSelfTest tries to catch any issue in the bitrot implementation
 // early instead of silently corrupting data.
+//bitrot自检
 func bitrotSelfTest() {
 	checksums := map[BitrotAlgorithm]string{
 		SHA256:          "a7677ff19e0182e4d52e3a3db727804abc82a5818749336369552e54b838b004",
@@ -223,6 +224,8 @@ func bitrotSelfTest() {
 		HighwayHash256S: "39c0407ed3f01b18d22c85db4aeff11e060ca5f43131b0126731ca197cd42313",
 	}
 	for algorithm := range bitrotAlgorithms {
+		//判断是否在bitrotAlgorithms中
+		//这不是废话么?本来就是bitrotAlgorithms遍历的.
 		if !algorithm.Available() {
 			continue
 		}
@@ -232,6 +235,7 @@ func bitrotSelfTest() {
 			logger.Fatal(errSelfTestFailure, fmt.Sprintf("bitrot: failed to decode %v checksum %s for selftest: %v", algorithm, checksums[algorithm], err))
 		}
 		var (
+			//创建对应的hash算法
 			hash = algorithm.New()
 			msg  = make([]byte, 0, hash.Size()*hash.BlockSize())
 			sum  = make([]byte, 0, hash.Size())

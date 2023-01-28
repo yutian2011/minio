@@ -381,6 +381,7 @@ func newConfigDirFromCtx(ctx *cli.Context, option string, getDefaultDir func() s
 }
 
 func handleCommonCmdArgs(ctx *cli.Context) {
+	//默认值都在ServerFlags 和GlobalFlags中设置的.
 	// Get "json" flag from command line argument and
 	// enable json and quite modes if json flag is turned on.
 	globalCLIContext.JSON = ctx.IsSet("json") || ctx.GlobalIsSet("json")
@@ -401,8 +402,13 @@ func handleCommonCmdArgs(ctx *cli.Context) {
 	}
 
 	// Fetch address option
+	//如果设置了address flag 则直接读取
+	//GlobalString, 从父ctx中查找.
 	addr := ctx.GlobalString("address")
+	//如果addr为空, 则从ctx的flagset中查找.
 	if addr == "" || addr == ":"+GlobalMinioDefaultPort {
+		//如果父ctx里面没有, 则找当前ctx中的.
+		//默认值就是":"+端口
 		addr = ctx.String("address")
 	}
 
@@ -428,6 +434,8 @@ func handleCommonCmdArgs(ctx *cli.Context) {
 		logger.FatalIf(errors.New("--console-address cannot be same as --address"), "Unable to start the server")
 	}
 
+	//globalMinioHost可能是空字符串.
+	//对于ipv4 就是找最后一个:分割的两个字符串.
 	globalMinioHost, globalMinioPort = mustSplitHostPort(addr)
 	globalMinioConsoleHost, globalMinioConsolePort = mustSplitHostPort(consoleAddr)
 
@@ -438,6 +446,8 @@ func handleCommonCmdArgs(ctx *cli.Context) {
 	globalMinioAddr = addr
 
 	// Check "no-compat" flag from command line argument.
+	//是否开启s3兼容性.
+	//默认是开启的.
 	globalCLIContext.StrictS3Compat = true
 	if ctx.IsSet("no-compat") || ctx.GlobalIsSet("no-compat") {
 		globalCLIContext.StrictS3Compat = false
@@ -554,6 +564,7 @@ func readFromSecret(sp string) (string, error) {
 }
 
 func loadEnvVarsFromFiles() {
+	//读取access key
 	if env.IsSet(config.EnvAccessKeyFile) {
 		accessKey, err := readFromSecret(env.Get(config.EnvAccessKeyFile, ""))
 		if err != nil {
@@ -565,6 +576,7 @@ func loadEnvVarsFromFiles() {
 		}
 	}
 
+	//读取密码
 	if env.IsSet(config.EnvSecretKeyFile) {
 		secretKey, err := readFromSecret(env.Get(config.EnvSecretKeyFile, ""))
 		if err != nil {
@@ -608,6 +620,8 @@ func loadEnvVarsFromFiles() {
 		}
 	}
 
+	//config文件
+	//从文件中读取配置文件, 然后设置环境变量
 	if env.IsSet(config.EnvConfigEnvFile) {
 		ekvs, err := minioEnvironFromFile(env.Get(config.EnvConfigEnvFile, ""))
 		if err != nil && !os.IsNotExist(err) {

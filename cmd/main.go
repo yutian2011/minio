@@ -131,6 +131,7 @@ func newApp(name string) *cli.App {
 
 	// Register all commands.
 	registerCommand(serverCmd)
+	//这里改动了, 以前的版本通过调用import包, 调用init的机制实现gatewayCmd的初始化的.
 	registerCommand(gatewayCmd) // hidden kept for guiding users.
 
 	// Set up app.
@@ -148,6 +149,8 @@ func newApp(name string) *cli.App {
 	app.Description = `Build high performance data infrastructure for machine learning, analytics and application data workloads with MinIO`
 	app.Flags = GlobalFlags
 	app.HideHelpCommand = true // Hide `help, h` command, we already have `minio --help`.
+	//包含了serverCmd和gatewayCmd
+	//会根据传入的参数决定执行哪个cmd的action
 	app.Commands = commands
 	app.CustomAppHelpTemplate = minioHelpTemplate
 	app.CommandNotFound = func(ctx *cli.Context, command string) {
@@ -191,6 +194,7 @@ func Main(args []string) {
 	// Set the minio app name.
 	appName := filepath.Base(args[0])
 
+	//开启debug?
 	if os.Getenv("_MINIO_DEBUG_NO_EXIT") != "" {
 		freeze := func(_ int) {
 			// Infinite blocking op
@@ -211,6 +215,14 @@ func Main(args []string) {
 	}
 
 	// Run the app - exit on error.
+	//app.Flags = GlobalFlags
+	//Flags作为后续ctx的主要内容. 这里使用的是GlobalFlags
+	//后续启动cmd时, 使用cmd的Flags, 就是GlobalFlags和ServerFlags集合.
+	//		c := a.Command(name)
+	//		if c != nil {
+	//			return c.Run(context)
+	//		}
+	//c.Run会对flags进行覆盖. 然后会根据flags进行创建新的ctx.
 	if err := newApp(appName).Run(args); err != nil {
 		os.Exit(1) //nolint:gocritic
 	}

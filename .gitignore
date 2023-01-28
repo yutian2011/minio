@@ -41,3 +41,6 @@ docs/debugging/inspect/inspect
 go.mod
 go.sum
 go.sum
+go.mod
+go.sum
+*.sum

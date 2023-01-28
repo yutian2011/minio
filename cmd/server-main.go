@@ -116,6 +116,7 @@ var gatewayCmd = cli.Command{
 	Action:          gatewayMain,
 }
 
+//gateway模式已经被遗弃了
 func gatewayMain(ctx *cli.Context) error {
 	logger.Fatal(errInvalidArgument, "Gateway is deprecated, To continue to use Gateway please use releases no later than 'RELEASE.2022-10-24T18-35-07Z'. We recommend all our users to migrate from gateway mode to server mode. Please read https://blog.min.io/deprecation-of-the-minio-gateway/")
 	return nil
@@ -125,6 +126,7 @@ var serverCmd = cli.Command{
 	Name:   "server",
 	Usage:  "start object storage server",
 	Flags:  append(ServerFlags, GlobalFlags...),
+	//实际程序的执行.
 	Action: serverMain,
 	CustomHelpTemplate: `NAME:
   {{.HelpName}} - {{.Usage}}
@@ -164,12 +166,17 @@ EXAMPLES:
 `,
 }
 
+//找MINIO_ARGS 或者 MINIO_VOLUMES环境变量, 然后用空格分离.
 func serverCmdArgs(ctx *cli.Context) []string {
+	//首先查找MINIO_ARGS 环境变量.
 	v, _, _, err := env.LookupEnv(config.EnvArgs)
 	if err != nil {
 		logger.FatalIf(err, "Unable to validate passed arguments in %s:%s",
 			config.EnvArgs, os.Getenv(config.EnvArgs))
 	}
+	//找不到MINIO_ARGS环境变量,
+	//继续找其他环境变量 .
+	//MINIO_VOLUMES
 	if v == "" {
 		v, _, _, err = env.LookupEnv(config.EnvVolumes)
 		if err != nil {
@@ -191,6 +198,7 @@ func serverCmdArgs(ctx *cli.Context) []string {
 		}
 		return ctx.Args()
 	}
+	//以空格进行区分字符串.
 	return strings.Fields(v)
 }
 
@@ -219,6 +227,10 @@ func serverHandleCmdArgs(ctx *cli.Context) {
 	// Register root CAs for remote ENVs
 	env.RegisterGlobalCAs(globalRootCAs)
 
+	//根据cmd传入的命令行进行创建globalEndpoints
+	//globalMinioAddr可能为空.
+	//serverCmdArgs就是找MINIO_ARGS 或者 MINIO_VOLUMES环境变量, 然后用空格分离.
+	//测试环境下, 没有使用minio_args 用的minio_volumes
 	globalEndpoints, setupType, err = createServerEndpoints(globalMinioAddr, serverCmdArgs(ctx)...)
 	logger.FatalIf(err, "Invalid command line arguments")
 
@@ -275,14 +287,17 @@ func serverHandleEnvVars() {
 
 var globalHealStateLK sync.RWMutex
 
+//初始化子系统
 func initAllSubsystems(ctx context.Context) {
 	globalHealStateLK.Lock()
 	// New global heal state
+	//cleanup, 是否专门启动后台goroutine, 进行定时清理操作(删除), 默认5min
 	globalAllHealState = newHealState(ctx, true)
 	globalBackgroundHealState = newHealState(ctx, false)
 	globalHealStateLK.Unlock()
 
 	// Initialize notification peer targets
+	//globalEndpoints在哪里初始化的?
 	globalNotificationSys = NewNotificationSys(globalEndpoints)
 
 	// Create new notification system
@@ -472,9 +487,12 @@ func getServerListenAddrs() []string {
 }
 
 // serverMain handler called for 'minio server' command.
+//minio server执行时的代码.
 func serverMain(ctx *cli.Context) {
+	//接收哪些信号, 将信号发送到channel中
 	signal.Notify(globalOSSignalCh, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 
+	//专门启动一个协程处理signals
 	go handleSignals()
 
 	setDefaultProfilerRates()
@@ -484,14 +502,19 @@ func serverMain(ctx *cli.Context) {
 	logger.AddSystemTarget(globalConsoleSys)
 
 	// Perform any self-tests
+	//hash算法的自检
 	bitrotSelfTest()
+	//校验码算法自检
 	erasureSelfTest()
+	//压缩算法自检
 	compressSelfTest()
 
 	// Handle all server environment vars.
+	//从配置文件中读取信息, 设置对应的环境变量.
 	serverHandleEnvVars()
 
 	// Handle all server command args.
+	//检查传入的命令行参数, 根据命令行参数进行创建相关的global参数
 	serverHandleCmdArgs(ctx)
 
 	// Initialize KMS configuration

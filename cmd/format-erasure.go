@@ -796,8 +796,11 @@ func initFormatErasure(ctx context.Context, storageDisks []StorageAPI, setCount,
 // ecDrivesNoConfig returns the erasure coded drives in a set if no config has been set.
 // It will attempt to read it from env variable and fall back to drives/2.
 func ecDrivesNoConfig(setDriveCount int) int {
+	//查找配置
+	//根据环境变量
 	sc, _ := storageclass.LookupConfig(config.KVS{}, setDriveCount)
 	ecDrives := sc.GetParityForSC(storageclass.STANDARD)
+	//如果获取的校验数量 < 0 , 则根据磁盘的数量设置默认的校验数
 	if ecDrives < 0 {
 		ecDrives = storageclass.DefaultParityBlocks(setDriveCount)
 	}

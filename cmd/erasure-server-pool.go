@@ -79,20 +79,24 @@ func newErasureServerPools(ctx context.Context, endpointServerPools EndpointServ
 
 	var localDrives []StorageAPI
 	local := endpointServerPools.FirstLocal()
+	//如果程序初始化时没有设置, 则设置默认值.
 	for i, ep := range endpointServerPools {
 		// If storage class is not set during startup, default values are used
 		// -- Default for Reduced Redundancy Storage class is, parity = 2
 		// -- Default for Standard Storage class is, parity = 2 - disks 4, 5
 		// -- Default for Standard Storage class is, parity = 3 - disks 6, 7
 		// -- Default for Standard Storage class is, parity = 4 - disks 8 to 16
+		//如果没有设置校验盘的数量
 		if commonParityDrives == 0 {
 			commonParityDrives = ecDrivesNoConfig(ep.DrivesPerSet)
 		}
 
+		//检查校验盘数量有效性.
 		if err = storageclass.ValidateParity(commonParityDrives, ep.DrivesPerSet); err != nil {
 			return nil, fmt.Errorf("parity validation returned an error %w <- (%d, %d), for pool(%s)", err, commonParityDrives, ep.DrivesPerSet, humanize.Ordinal(i+1))
 		}
 
+		//等待格式化校验
 		storageDisks[i], formats[i], err = waitForFormatErasure(local, ep.Endpoints, i+1,
 			ep.SetCount, ep.DrivesPerSet, deploymentID, distributionAlgo)
 		if err != nil {
@@ -119,6 +123,7 @@ func newErasureServerPools(ctx context.Context, endpointServerPools EndpointServ
 			return nil, fmt.Errorf("all pools must have same deployment ID - expected %s, got %s for pool(%s)", deploymentID, formats[i].ID, humanize.Ordinal(i+1))
 		}
 
+		//每个serverPool对应一个ErasureSet
 		z.serverPools[i], err = newErasureSets(ctx, ep, storageDisks[i], formats[i], commonParityDrives, i)
 		if err != nil {
 			return nil, err
