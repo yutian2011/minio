@@ -733,7 +733,7 @@ func CreateEndpoints(serverAddr string, foundLocal bool, args ...[]string) (Endp
 	}
 
 	// All endpoints are pointing to local host
-	//如果全是当前节点(可能是全是本地路径, 或者url全是当前节点), 说明只有一个节点, 多个挂载点的模式.
+	//如果全是当前节点的ep(可能是全是本地路径, 或者url全是当前节点), 说明只有一个节点, 多个挂载点的模式.
 	if len(endpoints) == localEndpointCount {
 		// If all endpoints have same port number, Just treat it as local erasure setup
 		// using URL style endpoints.

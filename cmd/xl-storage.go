@@ -240,6 +240,7 @@ func newXLStorage(ep Endpoint, cleanUp bool) (s *xlStorage, err error) {
 	s = &xlStorage{
 		diskPath:   path,
 		endpoint:   ep,
+		//默认没有开启 , 环境变量里面可以配置.
 		globalSync: globalFSOSync,
 		rootDisk:   rootDisk,
 		poolIndex:  -1,

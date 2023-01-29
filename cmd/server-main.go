@@ -231,6 +231,9 @@ func serverHandleCmdArgs(ctx *cli.Context) {
 	//globalMinioAddr可能为空.
 	//serverCmdArgs就是找MINIO_ARGS 或者 MINIO_VOLUMES环境变量, 然后用空格分离.
 	//测试环境下, 没有使用minio_args 用的minio_volumes
+	//createServerEndpoints首先划分set, 然后划分每个set中的ep, 然后创建ep, 确定setuptype类型.
+	//globalEndpoints是 EndpointServerPools
+	//type EndpointServerPools []PoolEndpoints
 	globalEndpoints, setupType, err = createServerEndpoints(globalMinioAddr, serverCmdArgs(ctx)...)
 	logger.FatalIf(err, "Invalid command line arguments")
 
@@ -598,6 +601,7 @@ func serverMain(ctx *cli.Context) {
 		}
 	}
 
+	//创建ObjectLayer
 	newObject, err := newObjectLayer(GlobalContext, globalEndpoints)
 	if err != nil {
 		logFatalErrs(err, Endpoint{}, true)

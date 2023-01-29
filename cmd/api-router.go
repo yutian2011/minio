@@ -187,6 +187,7 @@ var rejectedBucketAPIs = []rejectedAPI{
 // registerAPIRouter - registers S3 compatible APIs.
 func registerAPIRouter(router *mux.Router) {
 	// Initialize API.
+	//通过函数返回api具体是哪个. 这里不涉及具体ObjectLayer的初始化.
 	api := objectAPIHandlers{
 		ObjectAPI: newObjectLayerFn,
 		CacheAPI:  newCachedObjectLayerFn,

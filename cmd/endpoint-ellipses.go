@@ -67,13 +67,17 @@ var isValidSetSize = func(count uint64) bool {
 
 func commonSetDriveCount(divisibleSize uint64, setCounts []uint64) (setSize uint64) {
 	// prefers setCounts to be sorted for optimal behavior.
+	//已经排序了, 如果小于可选最大值, 直接返回divisibleSize
 	if divisibleSize < setCounts[len(setCounts)-1] {
 		return divisibleSize
 	}
 
 	// Figure out largest value of total_drives_in_erasure_set which results
 	// in least number of total_drives/total_drives_erasure_set ratio.
+	//找到ec set中最大的磁盘数量, 同时保证集合数量最小
 	prevD := divisibleSize / setCounts[0]
+	//假如没有省略号时, divisibleSize=4, volume==4, setCounts=[4 8 12 16] prevD=1, 那么pred就是1, setSize=4
+	// 如果公约数太大时, 尽可能找符合的比较小的set.
 	for _, cnt := range setCounts {
 		if divisibleSize%cnt == 0 {
 			d := divisibleSize / cnt
@@ -91,8 +95,9 @@ func commonSetDriveCount(divisibleSize uint64, setCounts []uint64) (setSize uint
 // we also use uniform number of drives common across all ellipses patterns.
 func possibleSetCountsWithSymmetry(setCounts []uint64, argPatterns []ellipses.ArgPattern) []uint64 {
 	newSetCounts := make(map[uint64]struct{})
-	//假如公约数为1, setCounts为[2,16]
-	//假如没有省略号, volume为4, 此时, setCounts=[4 8 12 16], argPatterns=nil
+	//假如公约数为1(磁盘数为1, 或者两者没有其他公约数.), setCounts为[2,16]
+	//计算时, 最好不要拿不太合适的值进行计算, 容易出问题. 就拿比较合理的数据计算. 例如不要出现3/5之类的.
+	//假如没有省略号, volume为4, 最大公约数也为4.  此时, setCounts=[4 8 12 16], argPatterns=nil
 	for _, ss := range setCounts {
 		var symmetry bool
 		//如果可能的最大公约数倍数. 最大公约数 * 1/2/3倍
@@ -156,6 +161,8 @@ func getSetIndexes(args []string, totalSizes []uint64, customSetDriveCount uint6
 	// 这里的一个arg应该就是一个serverPool.
 	//每个serverPool 会有节点数量, 和节点磁盘数量, 节点数量*节点磁盘数量=serverPool 总磁盘数.
 	//也可能没有, 就是1.
+	//这里是可以找所有serverPool中的最大公约数. 但是实际传入时, 对于有省略号的参数, 会一个个传入.
+	//所以这里的totalSizes大小还是1.
 	commonSize := getDivisibleSize(totalSizes)
 	//所有arg中最大公约数
 	possibleSetCounts := func(setSize uint64) (ss []uint64) {
@@ -217,6 +224,14 @@ func getSetIndexes(args []string, totalSizes []uint64, customSetDriveCount uint6
 		return nil, config.ErrInvalidNumberOfErasureEndpoints(nil).Msg(msg)
 	}
 
+	//最后一步, 这里是做什么呢?
+	//setSize是每个ec set的大小.
+	//totalSizes[i]/setSize 就是有多少个set.
+	//setIndexes[i] 就是serverPool上有多少个set, 每个set的大小.
+	//这里使用数组来表示每个set大小. 不应该直接作为一个属性么?
+	//尽量使用同一个ec set大小.
+	//实际上带省略号的 多个serverPool不会同时传入, 只会一个个传入,最后计算的还是一个serverPool上的.
+	//为什么, 也很简单, 防止后续划分ep时, 划分到其他serverPool的ep, 增加处理复杂度.
 	for i := range totalSizes {
 		for j := uint64(0); j < totalSizes[i]/setSize; j++ {
 			setIndexes[i] = append(setIndexes[i], setSize)
@@ -283,6 +298,8 @@ func parseEndpointSet(customSetDriveCount uint64, args ...string) (ep endpointSe
 	}
 
 	//getTotalSizes 返回每个arg(volumes)的磁盘数量
+	//ep.setIndexes 二维数组, serverPool, serverPool里面每个 ec set的大小.
+	//虽然这里可以进行多个serverpool 判断处理, 但是上层传入的时候, 还是一个个serverPool, 传入的.
 	ep.setIndexes, err = getSetIndexes(args, getTotalSizes(argPatterns), customSetDriveCount, argPatterns)
 	if err != nil {
 		return endpointSet{}, config.ErrInvalidErasureEndpoints(nil).Msg(err.Error())
@@ -298,6 +315,7 @@ func parseEndpointSet(customSetDriveCount uint64, args ...string) (ep endpointSe
 // specific set size.
 // For example: {1...64} is divided into 4 sets each of size 16.
 // This applies to even distributed setup syntax as well.
+//划分好ep
 func GetAllSets(args ...string) ([][]string, error) {
 	var customSetDriveCount uint64
 	//minio MINIO_ERASURE_SET_DRIVE_COUNT 每个ec集合中有几个磁盘数量, 可以通过环境变量指定.
@@ -322,6 +340,9 @@ func GetAllSets(args ...string) ([][]string, error) {
 			//假如有4个volume
 			//commonSize = volume数量.
 			//setCounts = 4 8 12 16
+			//没有省略号时, 只有一个serverPool.
+			//setIndexes是一个二维数组,表示每个serverPool所有的set, 以及set对应的集合大小是多少.
+			//当然当前场景下setIndexes只有一个0值对应的数组.
 			setIndexes, err = getSetIndexes(args, []uint64{uint64(len(args))}, customSetDriveCount, nil)
 			if err != nil {
 				return nil, err
@@ -337,14 +358,18 @@ func GetAllSets(args ...string) ([][]string, error) {
 		setArgs = s.Get()
 	} else {
 		//传入的args有省略号时
-		//这里面对volume ec分多少个冗余集合 ec set.
+		//这里面对volume ec分多少个纠删集合 ec set.
+		//ep.setIndexes 二维数组, serverPool, serverPool里面每个 ec set的大小.
+		//就是这里的s
 		s, err := parseEndpointSet(customSetDriveCount, args...)
 		if err != nil {
 			return nil, err
 		}
+		//根据ec集合的大小进行划分不同的set上对应哪些endpoint
 		setArgs = s.Get()
 	}
 
+	//保证ep不重复.
 	uniqueArgs := set.NewStringSet()
 	for _, sargs := range setArgs {
 		for _, arg := range sargs {
@@ -355,6 +380,7 @@ func GetAllSets(args ...string) ([][]string, error) {
 		}
 	}
 
+	//返回划分好的ep
 	return setArgs, nil
 }
 
@@ -368,6 +394,7 @@ var globalCustomErasureDriveCount = false
 // CreateServerEndpoints - validates and creates new endpoints from input args, supports
 // both ellipses and without ellipses transparently.
 //args传递的是MINIO_VOLUMES
+//这里首先划分set, 然后划分每个set中的ep, 然后创建ep, 确定setuptype类型.
 func createServerEndpoints(serverAddr string, args ...string) (
 	endpointServerPools EndpointServerPools, setupType SetupType, err error,
 ) {
@@ -416,17 +443,23 @@ func createServerEndpoints(serverAddr string, args ...string) (
 			return nil, -1, fmt.Errorf("all args must have ellipses for pool expansion (%w) args: %s", errInvalidArgument, args)
 		}
 		//每个serverPool都有自己的ec set
+		//划分好ec set集合大小 划分好每个set对应的ep.
 		setArgs, err := GetAllSets(arg)
 		if err != nil {
 			return nil, -1, err
 		}
 
+		//获取setup类型.
 		endpointList, gotSetupType, err := CreateEndpoints(serverAddr, foundPrevLocal, setArgs...)
 		if err != nil {
 			return nil, -1, err
 		}
 		if err = endpointServerPools.Add(PoolEndpoints{
+			//多少个set
 			SetCount:     len(setArgs),
+			//每个set上有多少个磁盘.
+			//为啥是0呢? 首先, 对于多个serverPool, 只会传入1个. 第二即使是多个也是相同的大小.
+			//setArgs[0]里面存放的是set 0上的所有ep. 划分好的ep.
 			DrivesPerSet: len(setArgs[0]),
 			Endpoints:    endpointList,
 			CmdLine:      arg,

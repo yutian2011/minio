@@ -281,6 +281,8 @@ func LookupConfig(kvs config.KVS, setDriveCount int) (cfg Config, err error) {
 		return Config{}, err
 	}
 
+	//获取环境变量.
+	//如果没有设置, 则ssc和 rrsc都为空.
 	ssc := env.Get(StandardEnv, kvs.Get(ClassStandard))
 	rrsc := env.Get(RRSEnv, kvs.Get(ClassRRS))
 	// Check for environment variables and parse into storageClass struct
@@ -290,6 +292,7 @@ func LookupConfig(kvs config.KVS, setDriveCount int) (cfg Config, err error) {
 			return Config{}, err
 		}
 	} else {
+		//默认纠删块数量.
 		cfg.Standard.Parity = DefaultParityBlocks(setDriveCount)
 	}
 
@@ -299,6 +302,7 @@ func LookupConfig(kvs config.KVS, setDriveCount int) (cfg Config, err error) {
 			return Config{}, err
 		}
 	} else {
+		//冗余存储默认为1.
 		cfg.RRS.Parity = defaultRRSParity
 		if setDriveCount == 1 {
 			cfg.RRS.Parity = 0

@@ -798,6 +798,7 @@ func initFormatErasure(ctx context.Context, storageDisks []StorageAPI, setCount,
 func ecDrivesNoConfig(setDriveCount int) int {
 	//查找配置
 	//根据环境变量
+	//这里传递了一个空的KVS
 	sc, _ := storageclass.LookupConfig(config.KVS{}, setDriveCount)
 	ecDrives := sc.GetParityForSC(storageclass.STANDARD)
 	//如果获取的校验数量 < 0 , 则根据磁盘的数量设置默认的校验数

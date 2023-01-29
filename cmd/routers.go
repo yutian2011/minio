@@ -26,12 +26,15 @@ import (
 // Composed function registering routers for only distributed Erasure setup.
 func registerDistErasureRouters(router *mux.Router, endpointServerPools EndpointServerPools) {
 	// Register storage REST router only if its a distributed setup.
+	//storage
 	registerStorageRESTHandlers(router, endpointServerPools)
 
 	// Register peer REST router only if its a distributed setup.
+	//peer
 	registerPeerRESTHandlers(router)
 
 	// Register bootstrap REST router for distributed setups.
+	//bootstrap相关.
 	registerBootstrapRESTHandlers(router)
 
 	// Register distributed namespace lock routers.
@@ -75,6 +78,7 @@ func configureServerHandler(endpointServerPools EndpointServerPools) (http.Handl
 	router := mux.NewRouter().SkipClean(true).UseEncodedPath()
 
 	// Initialize distributed NS lock.
+	//如果是分布式ec, 注册相关的handler
 	if globalIsDistErasure {
 		registerDistErasureRouters(router, endpointServerPools)
 	}

@@ -1323,6 +1323,7 @@ func registerStorageRESTHandlers(router *mux.Router, endpointServerPools Endpoin
 			go func(poolIdx, setIdx int, endpoint Endpoint) {
 				defer wg.Done()
 				var err error
+				//为每一个磁盘创建XLStorage
 				storageDisks[poolIdx][setIdx], err = newXLStorage(endpoint, false)
 				if err != nil {
 					// if supported errors don't fail, we proceed to
