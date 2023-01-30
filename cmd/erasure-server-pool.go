@@ -86,7 +86,7 @@ func newErasureServerPools(ctx context.Context, endpointServerPools EndpointServ
 		// -- Default for Standard Storage class is, parity = 2 - disks 4, 5
 		// -- Default for Standard Storage class is, parity = 3 - disks 6, 7
 		// -- Default for Standard Storage class is, parity = 4 - disks 8 to 16
-		//如果没有设置校验盘的数量
+		//开始时没有设置的, 从环境变量里面读取配置storageclass.STANDARD
 		if commonParityDrives == 0 {
 			commonParityDrives = ecDrivesNoConfig(ep.DrivesPerSet)
 		}

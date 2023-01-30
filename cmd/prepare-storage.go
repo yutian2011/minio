@@ -145,8 +145,12 @@ func isServerResolvable(endpoint Endpoint, timeout time.Duration) error {
 // connect to list of endpoints and load all Erasure disk formats, validate the formats are correct
 // and are in quorum, if no formats are found attempt to initialize all of them for the first
 // time. additionally make sure to close all the disks used in this attempt.
+//与所有的ep建立连接, 加载formats, 检查formats是否正确.
+//如果找不到formats文件, 则初始化.
 func connectLoadInitFormats(verboseLogging bool, firstDisk bool, endpoints Endpoints, poolCount, setCount, setDriveCount int, deploymentID, distributionAlgo string) (storageDisks []StorageAPI, format *formatErasureV3, err error) {
 	// Initialize all storage disks
+	//初始化时 healthCheck为true, 会添加相关检查的函数.
+	//通过goroutine 并发的创建对应的对象. 而不是使用for循环.
 	storageDisks, errs := initStorageDisksWithErrors(endpoints, true)
 
 	defer func(storageDisks []StorageAPI) {
@@ -155,6 +159,7 @@ func connectLoadInitFormats(verboseLogging bool, firstDisk bool, endpoints Endpo
 		}
 	}(storageDisks)
 
+	//根据错误信息打印.
 	for i, err := range errs {
 		if err != nil && !errors.Is(err, errXLBackend) {
 			if errors.Is(err, errDiskNotFound) && verboseLogging {
@@ -173,11 +178,13 @@ func connectLoadInitFormats(verboseLogging bool, firstDisk bool, endpoints Endpo
 		}
 	}
 
+	//检查磁盘错误.
 	if err := checkDiskFatalErrs(errs); err != nil {
 		return nil, nil, err
 	}
 
 	// Attempt to load all `format.json` from all disks.
+	//加载所有磁盘下的format.json文件.
 	formatConfigs, sErrs := loadFormatErasureAll(storageDisks, false)
 	// Check if we have
 	for i, sErr := range sErrs {

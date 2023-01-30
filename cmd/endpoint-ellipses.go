@@ -315,7 +315,7 @@ func parseEndpointSet(customSetDriveCount uint64, args ...string) (ep endpointSe
 // specific set size.
 // For example: {1...64} is divided into 4 sets each of size 16.
 // This applies to even distributed setup syntax as well.
-//划分好ep
+//计算集合数量和大小, 然后进行划分ep. 返回划分好的ep
 func GetAllSets(args ...string) ([][]string, error) {
 	var customSetDriveCount uint64
 	//minio MINIO_ERASURE_SET_DRIVE_COUNT 每个ec集合中有几个磁盘数量, 可以通过环境变量指定.
@@ -413,6 +413,7 @@ func createServerEndpoints(serverAddr string, args ...string) (
 	//如果有没有省略号, 直接走旧流程
 	//就一个serverPool, 每个serverPool下有多个endpoint, 一个挂载点一个endpoint.
 	if ok {
+		//计算集合数量和大小, 然后进行划分ep. 返回划分好的ep. 顺序划分的.
 		setArgs, err := GetAllSets(args...)
 		if err != nil {
 			return nil, -1, err

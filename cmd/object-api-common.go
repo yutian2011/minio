@@ -57,6 +57,7 @@ var globalCacheObjectAPI CacheObjectLayer
 
 // Depending on the disk type network or local, initialize storage API.
 func newStorageAPI(endpoint Endpoint, healthCheck bool) (storage StorageAPI, err error) {
+	//按理说, 在初始化的时候, 即使是url, 但是如果是本地磁盘, IsLocal应该也是true的.
 	if endpoint.IsLocal {
 		storage, err := newXLStorage(endpoint, healthCheck)
 		if err != nil {

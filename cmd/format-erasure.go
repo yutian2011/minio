@@ -671,6 +671,7 @@ func closeStorageDisks(storageDisks ...StorageAPI) {
 func initStorageDisksWithErrors(endpoints Endpoints, healthCheck bool) ([]StorageAPI, []error) {
 	// Bootstrap disks.
 	storageDisks := make([]StorageAPI, len(endpoints))
+	//errgroup 用法?!
 	g := errgroup.WithNErrs(len(endpoints))
 	for index := range endpoints {
 		index := index
