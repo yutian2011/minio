@@ -185,6 +185,8 @@ func connectLoadInitFormats(verboseLogging bool, firstDisk bool, endpoints Endpo
 
 	// Attempt to load all `format.json` from all disks.
 	//加载所有磁盘下的format.json文件.
+	//storageDisks中类型 xlStorage storageRESTClient
+	//读取每个drive中的.sys.minio/format.json文件
 	formatConfigs, sErrs := loadFormatErasureAll(storageDisks, false)
 	// Check if we have
 	for i, sErr := range sErrs {
@@ -201,11 +203,13 @@ func connectLoadInitFormats(verboseLogging bool, firstDisk bool, endpoints Endpo
 	// most part unless one of the formats is not consistent
 	// with expected Erasure format. For example if a user is
 	// trying to pool FS backend into an Erasure set.
+	//检查format.json版本信息, 检查集合中磁盘的数量等.
 	if err = checkFormatErasureValues(formatConfigs, storageDisks, setDriveCount); err != nil {
 		return nil, nil, err
 	}
 
 	// All disks report unformatted we should initialized everyone.
+	//判断是否需要初始化磁盘.
 	if shouldInitErasureDisks(sErrs) && firstDisk {
 		logger.Info("Formatting %s pool, %v set(s), %v drives per set.",
 			humanize.Ordinal(poolCount), setCount, setDriveCount)

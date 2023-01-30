@@ -1504,10 +1504,15 @@ func (s *xlStorage) readAllData(ctx context.Context, volumeDir string, filePath 
 }
 
 // ReadAll is a raw call, reads content at any path and returns the buffer.
+//这里读取文件， 对metabucket， 即sys.minio中format.json缓存了
 func (s *xlStorage) ReadAll(ctx context.Context, volume string, path string) (buf []byte, err error) {
 	// Specific optimization to avoid re-read from the drives for `format.json`
 	// in-case the caller is a network operation.
+	//系统初始化时， 首先从.meta里面读取，配置文件. 。sys.minio
 	if volume == minioMetaBucket && path == formatConfigFile {
+		//为啥这里这么操作的？
+		//s.formatData 第一次应该是空的。 不过后续读取后应该就保存了
+		//应该只有第一次读取。 后续会直接返回。
 		s.RLock()
 		formatData := make([]byte, len(s.formatData))
 		copy(formatData, s.formatData)
@@ -1527,6 +1532,7 @@ func (s *xlStorage) ReadAll(ctx context.Context, volume string, path string) (bu
 		return nil, err
 	}
 
+	//读取文件内容，
 	buf, _, err = s.readAllData(ctx, volumeDir, filePath)
 	return buf, err
 }

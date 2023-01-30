@@ -393,6 +393,8 @@ func saveFormatErasure(disk StorageAPI, format *formatErasureV3, heal bool) erro
 
 // loadFormatErasure - loads format.json from disk.
 func loadFormatErasure(disk StorageAPI) (format *formatErasureV3, err error) {
+	//storageDisks中类型 xlStorage storageRESTClient
+	//读取.sys.minio/format.json文件.
 	buf, err := disk.ReadAll(context.TODO(), minioMetaBucket, formatConfigFile)
 	if err != nil {
 		// 'file not found' and 'volume not found' as
@@ -434,9 +436,11 @@ func checkFormatErasureValues(formats []*formatErasureV3, disks []StorageAPI, se
 		if formatErasure == nil {
 			continue
 		}
+		//检查支持的版本信息.
 		if err := checkFormatErasureValue(formatErasure, disks[i]); err != nil {
 			return err
 		}
+		//磁盘的数 = 集合数量 * 集合中磁盘的数量.
 		if len(formats) != len(formatErasure.Erasure.Sets)*len(formatErasure.Erasure.Sets[0]) {
 			return fmt.Errorf("%s drive is already being used in another erasure deployment. (Number of drives specified: %d but the number of drives found in the %s drive's format.json: %d)",
 				disks[i], len(formats), humanize.Ordinal(i+1), len(formatErasure.Erasure.Sets)*len(formatErasure.Erasure.Sets[0]))
@@ -444,6 +448,7 @@ func checkFormatErasureValues(formats []*formatErasureV3, disks []StorageAPI, se
 		// Only if custom erasure drive count is set, verify if the
 		// set_drive_count was manually set - we need to honor what is
 		// present on the drives.
+		//检查文件中配置的磁盘数是否与自定义配置的相同.
 		if globalCustomErasureDriveCount && len(formatErasure.Erasure.Sets[0]) != setDriveCount {
 			return fmt.Errorf("%s drive is already formatted with %d drives per erasure set. This cannot be changed to %d, please revert your MINIO_ERASURE_SET_DRIVE_COUNT setting", disks[i], len(formatErasure.Erasure.Sets[0]), setDriveCount)
 		}
