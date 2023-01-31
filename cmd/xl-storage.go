@@ -298,7 +298,10 @@ func newXLStorage(ep Endpoint, cleanUp bool) (s *xlStorage, err error) {
 
 // getDiskInfo returns given disk information.
 func getDiskInfo(diskPath string) (di disk.Info, err error) {
+	//检查路径长度.
 	if err = checkPathLength(diskPath); err == nil {
+		//如果长度正常, 检查磁盘信息.
+		//使用statfs系统调用检查磁盘信息, df
 		di, err = disk.GetInfo(diskPath)
 	}
 	switch {
@@ -603,13 +606,16 @@ func (s *xlStorage) DiskInfo(context.Context) (info DiskInfo, err error) {
 			// Healing is 'true' when
 			// - if we found an unformatted disk (no 'format.json')
 			// - if we found healing tracker 'healing.bin'
+			//当磁盘找不到format.json 或者有.healing.bin文件
 			dcinfo.Healing = errors.Is(err, errUnformattedDisk) || (s.Healing() != nil)
+			//scanning 这个标志位是做什么的呢?
 			dcinfo.Scanning = atomic.LoadInt32(&s.scanning) == 1
 			dcinfo.ID = diskID
 			return dcinfo, err
 		}
 	})
 
+	//这里的get是获取的什么值呢?
 	v, err := s.diskInfoCache.Get()
 	if v != nil {
 		info = v.(DiskInfo)
@@ -669,19 +675,23 @@ func (s *xlStorage) GetDiskID() (string, error) {
 	}
 	s.RUnlock()
 
+	//lstat 获取format.json信息
 	fi, err := s.checkFormatJSON()
 	if err != nil {
 		return "", err
 	}
 
+	//检查是不是同一个文件.
 	if xioutil.SameFile(fi, fileInfo) && diskID != "" {
 		s.Lock()
 		// If the file has not changed, just return the cached diskID information.
+		//更新检查的时间.
 		s.formatLastCheck = time.Now()
 		s.Unlock()
 		return diskID, nil
 	}
 
+	//如果不是同一个文件, 则重新读取.
 	formatFile := pathJoin(s.diskPath, minioMetaBucket, formatConfigFile)
 	b, err := os.ReadFile(formatFile)
 	if err != nil {

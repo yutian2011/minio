@@ -80,6 +80,7 @@ func newErasureServerPools(ctx context.Context, endpointServerPools EndpointServ
 	var localDrives []StorageAPI
 	local := endpointServerPools.FirstLocal()
 	//如果程序初始化时没有设置, 则设置默认值.
+	//每个serverPool都会单独的确认.
 	for i, ep := range endpointServerPools {
 		// If storage class is not set during startup, default values are used
 		// -- Default for Reduced Redundancy Storage class is, parity = 2
@@ -96,7 +97,10 @@ func newErasureServerPools(ctx context.Context, endpointServerPools EndpointServ
 			return nil, fmt.Errorf("parity validation returned an error %w <- (%d, %d), for pool(%s)", err, commonParityDrives, ep.DrivesPerSet, humanize.Ordinal(i+1))
 		}
 
-		//等待格式化校验
+		//不断地等待format.json文件的确认.
+		//与所有的ep建立连接, 加载formats, 检查formats是否正确.
+		//如果都找不到formats文件, 则初始化.
+		//确认formats中记录的集群id是否一致.
 		storageDisks[i], formats[i], err = waitForFormatErasure(local, ep.Endpoints, i+1,
 			ep.SetCount, ep.DrivesPerSet, deploymentID, distributionAlgo)
 		if err != nil {
@@ -105,6 +109,7 @@ func newErasureServerPools(ctx context.Context, endpointServerPools EndpointServ
 
 		for _, storageDisk := range storageDisks[i] {
 			if storageDisk != nil && storageDisk.IsLocal() {
+				//将本地磁盘找到.
 				localDrives = append(localDrives, storageDisk)
 			}
 		}
@@ -123,7 +128,9 @@ func newErasureServerPools(ctx context.Context, endpointServerPools EndpointServ
 			return nil, fmt.Errorf("all pools must have same deployment ID - expected %s, got %s for pool(%s)", deploymentID, formats[i].ID, humanize.Ordinal(i+1))
 		}
 
-		//每个serverPool对应一个ErasureSet
+		//每个serverPool对应一个ErasureSets
+		//每个serverPool至少一个ErasureSet
+		//初始化ErasureSets和里面的ErasureSet对象.
 		z.serverPools[i], err = newErasureSets(ctx, ep, storageDisks[i], formats[i], commonParityDrives, i)
 		if err != nil {
 			return nil, err

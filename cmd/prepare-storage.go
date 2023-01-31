@@ -146,11 +146,13 @@ func isServerResolvable(endpoint Endpoint, timeout time.Duration) error {
 // and are in quorum, if no formats are found attempt to initialize all of them for the first
 // time. additionally make sure to close all the disks used in this attempt.
 //与所有的ep建立连接, 加载formats, 检查formats是否正确.
-//如果找不到formats文件, 则初始化.
+//如果都找不到formats文件, 则初始化.
+//确认formats中记录的集群id是否一致.
 func connectLoadInitFormats(verboseLogging bool, firstDisk bool, endpoints Endpoints, poolCount, setCount, setDriveCount int, deploymentID, distributionAlgo string) (storageDisks []StorageAPI, format *formatErasureV3, err error) {
 	// Initialize all storage disks
 	//初始化时 healthCheck为true, 会添加相关检查的函数.
 	//通过goroutine 并发的创建对应的对象. 而不是使用for循环.
+	//xlStorageDiskIDCheck storageRESTClient
 	storageDisks, errs := initStorageDisksWithErrors(endpoints, true)
 
 	defer func(storageDisks []StorageAPI) {
@@ -185,7 +187,7 @@ func connectLoadInitFormats(verboseLogging bool, firstDisk bool, endpoints Endpo
 
 	// Attempt to load all `format.json` from all disks.
 	//加载所有磁盘下的format.json文件.
-	//storageDisks中类型 xlStorage storageRESTClient
+	//storageDisks中类型 xlStorageDiskIDCheck storageRESTClient
 	//读取每个drive中的.sys.minio/format.json文件
 	formatConfigs, sErrs := loadFormatErasureAll(storageDisks, false)
 	// Check if we have
@@ -209,12 +211,16 @@ func connectLoadInitFormats(verboseLogging bool, firstDisk bool, endpoints Endpo
 	}
 
 	// All disks report unformatted we should initialized everyone.
-	//判断是否需要初始化磁盘.
+	//根据错误判断是否需要初始化磁盘. 全部都没有初始化才会走下面流程.
+	//只有集群第一个磁盘所在的几点可以进行初始化.
+	//其他节点firstDisk为false, 不是本地, 则不能进行初始化.
 	if shouldInitErasureDisks(sErrs) && firstDisk {
 		logger.Info("Formatting %s pool, %v set(s), %v drives per set.",
 			humanize.Ordinal(poolCount), setCount, setDriveCount)
 
 		// Initialize erasure code format on disks
+		//返回format.json中配置相同最多的配置.
+		//因为有的可能因为下线等, 配置不是最新的了.
 		format, err = initFormatErasure(GlobalContext, storageDisks, setCount, setDriveCount, deploymentID, distributionAlgo, sErrs)
 		if err != nil {
 			return nil, nil, err
@@ -223,11 +229,13 @@ func connectLoadInitFormats(verboseLogging bool, firstDisk bool, endpoints Endpo
 		// Assign globalDeploymentID on first run for the
 		// minio server managing the first disk
 		globalDeploymentID = format.ID
+		//初始化完成后直接返回.
 		return storageDisks, format, nil
 	}
 
 	// Return error when quorum unformatted disks - indicating we are
 	// waiting for first server to be online.
+	//如果大部分没有在线.
 	unformattedDisks := quorumUnformattedDisks(sErrs)
 	if unformattedDisks && !firstDisk {
 		return nil, nil, errNotFirstDisk
@@ -247,12 +255,14 @@ func connectLoadInitFormats(verboseLogging bool, firstDisk bool, endpoints Endpo
 	// This migration failed to capture '.This' field properly which indicates
 	// the disk UUID association. Below function is called to handle and fix
 	// this regression, for more info refer https://github.com/minio/minio/issues/5667
+	//如果formats[i].Erasure.This == ""为空, 则进行修复. 2018年的问题.
 	if err = fixFormatErasureV3(storageDisks, endpoints, formatConfigs); err != nil {
 		logger.LogIf(GlobalContext, err)
 		return nil, nil, err
 	}
 
 	// If any of the .This field is still empty, we return error.
+	//如果.This依然为空, 则返回错误.
 	if formatErasureV3ThisEmpty(formatConfigs) {
 		return nil, nil, errErasureV3ThisEmpty
 	}
@@ -263,7 +273,9 @@ func connectLoadInitFormats(verboseLogging bool, firstDisk bool, endpoints Endpo
 		return nil, nil, err
 	}
 
+	//如果集群没有ID(DeploymentID), 则进行修复.
 	if format.ID == "" {
+		//只有第一个磁盘的节点会修复集群的Deployment id.
 		// Not a first disk, wait until first disk fixes deploymentID
 		if !firstDisk {
 			return nil, nil, errNotFirstDisk
@@ -285,6 +297,7 @@ func connectLoadInitFormats(verboseLogging bool, firstDisk bool, endpoints Endpo
 }
 
 // Format disks before initialization of object layer.
+//不管的尝试初始化确认format.json的内容正确.
 func waitForFormatErasure(firstDisk bool, endpoints Endpoints, poolCount, setCount, setDriveCount int, deploymentID, distributionAlgo string) ([]StorageAPI, *formatErasureV3, error) {
 	if len(endpoints) == 0 || setCount == 0 || setDriveCount == 0 {
 		return nil, nil, errInvalidArgument
@@ -299,6 +312,9 @@ func waitForFormatErasure(firstDisk bool, endpoints Endpoints, poolCount, setCou
 
 	var tries int
 	var verboseLogging bool
+	////与所有的ep建立连接, 加载formats, 检查formats是否正确.
+	////如果都找不到formats文件, 则初始化.
+	////确认formats中记录的集群id是否一致.
 	storageDisks, format, err := connectLoadInitFormats(verboseLogging, firstDisk, endpoints, poolCount, setCount, setDriveCount, deploymentID, distributionAlgo)
 	if err == nil {
 		return storageDisks, format, nil

@@ -29,6 +29,7 @@ import (
 // GetInfo returns total and free bytes available in a directory, e.g. `/`.
 func GetInfo(path string) (info Info, err error) {
 	s := syscall.Statfs_t{}
+	//就是调用statfs 系统调用, 据说df也是使用这个命令.
 	err = syscall.Statfs(path, &s)
 	if err != nil {
 		return Info{}, err

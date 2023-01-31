@@ -63,6 +63,7 @@ type erasureSets struct {
 	erasureDisks [][]StorageAPI
 
 	// Distributed locker clients.
+	//将每个erasure中所有磁盘对应所在的节点的locker进行记录.
 	erasureLockers setsDsyncLockers
 
 	// Distributed lock owner (constant per running instance).
@@ -347,7 +348,9 @@ const defaultMonitorConnectEndpointInterval = defaultMonitorNewDiskInterval + ti
 
 // Initialize new set of erasure coded sets.
 func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks []StorageAPI, format *formatErasureV3, defaultParityCount, poolIdx int) (*erasureSets, error) {
+	//集合的个数
 	setCount := len(format.Erasure.Sets)
+	//集合中磁盘的数量.
 	setDriveCount := len(format.Erasure.Sets[0])
 
 	endpointStrings := make([]string, len(endpoints.Endpoints))
@@ -377,9 +380,11 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 		poolIndex:          poolIdx,
 	}
 
+	//这里的namespace lock是干什么的?
 	mutex := newNSLock(globalIsDistErasure)
 
 	// Number of buffers, max 2GB
+	//2G内存/2M = 1024个buffer
 	n := (2 * humanize.GiByte) / (blockSizeV2 * 2)
 
 	// Initialize byte pool once for all sets, bpool size is set to
@@ -390,6 +395,7 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 	// setCount * setDriveCount with each memory upto blockSizeV1
 	//
 	// Number of buffers, max 10GiB
+	// 10G/ 2M = 5120
 	m := (10 * humanize.GiByte) / (blockSizeV1 * 2)
 
 	bpOld := bpool.NewBytePoolCap(m, blockSizeV1, blockSizeV1*2)
@@ -398,6 +404,9 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 		s.erasureDisks[i] = make([]StorageAPI, setDriveCount)
 	}
 
+	//这个locker是做什么的? 目前暂时看是对每个节点调用锁相关的操作.
+	//针对每一个host创建一个locker
+	//locker: lockRESTClient
 	erasureLockers := map[string]dsync.NetLocker{}
 	for _, endpoint := range endpoints.Endpoints {
 		if _, ok := erasureLockers[endpoint.Host]; !ok {
@@ -405,6 +414,7 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 		}
 	}
 
+	//初始化每个erasure set中的锁对象.
 	for i := 0; i < setCount; i++ {
 		lockerEpSet := set.NewStringSet()
 		for j := 0; j < setDriveCount; j++ {
@@ -412,6 +422,8 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 			// Only add lockers only one per endpoint and per erasure set.
 			if locker, ok := erasureLockers[endpoint.Host]; ok && !lockerEpSet.Contains(endpoint.Host) {
 				lockerEpSet.Add(endpoint.Host)
+				//s是一个serverPool中所有的erasure set.
+				//将每个erasure中所有磁盘对应所在的节点的locker进行记录.
 				s.erasureLockers[i] = append(s.erasureLockers[i], locker)
 			}
 		}
@@ -442,6 +454,7 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 					if diskID == "" {
 						return
 					}
+					//找到disk在format记录的erasure set中的index.
 					m, n, err := findDiskIndexByDiskID(format, diskID)
 					if err != nil {
 						logger.LogIf(ctx, err)
@@ -452,18 +465,23 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 						s.erasureDisks[i][j] = &unrecognizedDisk{storage: disk}
 						return
 					}
+					//xlStorage中设置poolIndex, setIndex, diskIndex
 					disk.SetDiskLoc(s.poolIndex, m, n)
+					//erasureSets中记录所有ep的id.
 					s.endpointStrings[m*setDriveCount+n] = disk.String()
+					//在erasureSets中根据位置, 将磁盘对应的api放入.
 					s.erasureDisks[m][n] = disk
 				}(disk, i, j)
 			}
 			innerWg.Wait()
 
 			// Initialize erasure objects for a given set.
+			//创建erasureObjects
 			s.sets[i] = &erasureObjects{
 				setIndex:           i,
 				poolIndex:          poolIdx,
 				setDriveCount:      setDriveCount,
+				//默认的纠删码块数量.
 				defaultParityCount: defaultParityCount,
 				getDisks:           s.GetDisks(i),
 				getLockers:         s.GetLockers(i),
@@ -478,9 +496,11 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 	wg.Wait()
 
 	// start cleanup stale uploads go-routine.
+	//处理之前上传
 	go s.cleanupStaleUploads(ctx)
 
 	// start cleanup of deleted objects.
+	//清理删除的objects
 	go s.cleanupDeletedObjects(ctx)
 
 	// Start the disk monitoring and connect routine.
@@ -1219,6 +1239,9 @@ func getHealDiskInfos(storageDisks []StorageAPI, errs []error) ([]DiskInfo, []er
 				return errDiskNotFound
 			}
 			var err error
+			//调用的 xlStorageDiskIDCheck storageRESTClient
+			//最终都是调用func (s *xlStorage) DiskInfo(context.Context) (info DiskInfo, err error) {
+			//获取磁盘的信息
 			infos[index], err = storageDisks[index].DiskInfo(context.TODO())
 			return err
 		}, index)
@@ -1232,12 +1255,14 @@ func markRootDisksAsDown(storageDisks []StorageAPI, errs []error) {
 		// Do nothing
 		return
 	}
+	//获取磁盘的信息.
 	infos, ierrs := getHealDiskInfos(storageDisks, errs)
 	for i := range storageDisks {
 		if ierrs[i] != nil && ierrs[i] != errUnformattedDisk {
 			storageDisks[i] = nil
 			continue
 		}
+		//跳过与根目录 同一个磁盘的 磁盘.
 		if storageDisks[i] != nil && infos[i].RootDisk {
 			// We should not heal on root disk. i.e in a situation where the minio-administrator has unmounted a
 			// defective drive we should not heal a path on the root disk.

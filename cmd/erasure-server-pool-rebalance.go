@@ -99,6 +99,7 @@ type rebalanceMeta struct {
 
 var errRebalanceNotStarted = errors.New("rebalance not started")
 
+//加载reblance信息, 从rebalance.bin配置中.
 func (z *erasureServerPools) loadRebalanceMeta(ctx context.Context) error {
 	r := &rebalanceMeta{}
 	err := r.load(ctx, z.serverPools[0])

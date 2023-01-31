@@ -152,6 +152,7 @@ func newFormatErasureV3(numSets int, setLen int) *formatErasureV3 {
 	if setLen == 1 {
 		format.Format = formatBackendErasureSingle
 	}
+	//生成uuid
 	format.ID = mustGetUUID()
 	format.Erasure.Version = formatErasureVersionV3
 	format.Erasure.DistributionAlgo = formatErasureVersionV3DistributionAlgoV3
@@ -364,6 +365,7 @@ func saveFormatErasure(disk StorageAPI, format *formatErasureV3, heal bool) erro
 		return err
 	}
 
+	//先写入一个uuid.json上
 	tmpFormat := mustGetUUID()
 
 	// Purge any existing temporary file, okay to ignore errors here.
@@ -378,11 +380,13 @@ func saveFormatErasure(disk StorageAPI, format *formatErasureV3, heal bool) erro
 	}
 
 	// Rename file `uuid.json` --> `format.json`.
+	//写完之后重新rename下.
 	if err = disk.RenameFile(context.TODO(), minioMetaBucket, tmpFormat, minioMetaBucket, formatConfigFile); err != nil {
 		return err
 	}
 
 	disk.SetDiskID(diskID)
+	//初始化时, heal为false.
 	if heal {
 		ctx := context.Background()
 		ht := newHealingTracker(disk)
@@ -393,7 +397,7 @@ func saveFormatErasure(disk StorageAPI, format *formatErasureV3, heal bool) erro
 
 // loadFormatErasure - loads format.json from disk.
 func loadFormatErasure(disk StorageAPI) (format *formatErasureV3, err error) {
-	//storageDisks中类型 xlStorage storageRESTClient
+	//storageDisks中类型 xlStorageDiskIDCheck storageRESTClient
 	//读取.sys.minio/format.json文件.
 	buf, err := disk.ReadAll(context.TODO(), minioMetaBucket, formatConfigFile)
 	if err != nil {
@@ -486,15 +490,18 @@ func formatErasureGetDeploymentID(refFormat *formatErasureV3, formats []*formatE
 // formatErasureFixDeploymentID - Add deployment id if it is not present.
 func formatErasureFixDeploymentID(endpoints Endpoints, storageDisks []StorageAPI, refFormat *formatErasureV3) (err error) {
 	// Attempt to load all `format.json` from all disks.
+	//读取所有磁盘的format.json文件.
 	formats, _ := loadFormatErasureAll(storageDisks, false)
 	for index := range formats {
 		// If the Erasure sets do not match, set those formats to nil,
 		// We do not have to update the ID on those format.json file.
+		//如果传入的format与当前不一致, 则把读取的format置为nil
 		if formats[index] != nil && !reflect.DeepEqual(formats[index].Erasure.Sets, refFormat.Erasure.Sets) {
 			formats[index] = nil
 		}
 	}
 
+	//返回读取的与配置磁盘一致的format.json的id.
 	refFormat.ID, err = formatErasureGetDeploymentID(refFormat, formats)
 	if err != nil {
 		return err
@@ -509,7 +516,9 @@ func formatErasureFixDeploymentID(endpoints Endpoints, storageDisks []StorageAPI
 
 	// ID is generated for the first time,
 	// We set the ID in all the formats and update.
+	//如果还是空, 则重新生成id.
 	refFormat.ID = mustGetUUID()
+	//每一个format都进行赋值.
 	for _, format := range formats {
 		if format != nil {
 			format.ID = refFormat.ID
@@ -517,6 +526,7 @@ func formatErasureFixDeploymentID(endpoints Endpoints, storageDisks []StorageAPI
 	}
 	// Deployment ID needs to be set on all the disks.
 	// Save `format.json` across all disks.
+	//通知所有磁盘, 保存deploymentid
 	return saveFormatErasureAll(GlobalContext, storageDisks, formats)
 }
 
@@ -563,17 +573,21 @@ func formatErasureFixLocalDeploymentID(endpoints Endpoints, storageDisks []Stora
 }
 
 // Get backend Erasure format in quorum `format.json`.
+//传入的所有读取的format
 func getFormatErasureInQuorum(formats []*formatErasureV3) (*formatErasureV3, error) {
 	formatCountMap := make(map[int]int, len(formats))
 	for _, format := range formats {
 		if format == nil {
 			continue
 		}
+		//统计format中记录的所有磁盘的数量.
+		//然后每个format中磁盘数量 进行统计.
 		formatCountMap[format.Drives()]++
 	}
 
 	maxDrives := 0
 	maxCount := 0
+	//maxCount, 当前集群中记录磁盘数量相同 最多的数量.
 	for drives, count := range formatCountMap {
 		if count > maxCount {
 			maxCount = count
@@ -585,6 +599,7 @@ func getFormatErasureInQuorum(formats []*formatErasureV3) (*formatErasureV3, err
 		return nil, errErasureReadQuorum
 	}
 
+	//如果format记录的磁盘数量一致的数量 少于一半, 则不可读.
 	if maxCount < len(formats)/2 {
 		return nil, errErasureReadQuorum
 	}
@@ -593,6 +608,7 @@ func getFormatErasureInQuorum(formats []*formatErasureV3) (*formatErasureV3, err
 		if format == nil {
 			continue
 		}
+		//返回当前配置相同最多的那个配置.
 		if format.Drives() == maxDrives {
 			format := formats[i].Clone()
 			format.Erasure.This = ""
@@ -647,6 +663,7 @@ func saveFormatErasureAll(ctx context.Context, storageDisks []StorageAPI, format
 			if formats[index] == nil {
 				return errDiskNotFound
 			}
+			//存储format.json
 			return saveFormatErasure(storageDisks[index], formats[index], false)
 		}, index)
 	}
@@ -745,14 +762,18 @@ func fixFormatErasureV3(storageDisks []StorageAPI, endpoints Endpoints, formats 
 
 // initFormatErasure - save Erasure format configuration on all disks.
 func initFormatErasure(ctx context.Context, storageDisks []StorageAPI, setCount, setDriveCount int, deploymentID, distributionAlgo string, sErrs []error) (*formatErasureV3, error) {
+	//初始化id. 算法等.
 	format := newFormatErasureV3(setCount, setDriveCount)
 	formats := make([]*formatErasureV3, len(storageDisks))
 	wantAtMost := ecDrivesNoConfig(setDriveCount)
 
 	for i := 0; i < setCount; i++ {
+		//根据hostname对磁盘进行分类
 		hostCount := make(map[string]int, setDriveCount)
 		for j := 0; j < setDriveCount; j++ {
+			//为磁盘分配id.
 			disk := storageDisks[i*setDriveCount+j]
+			//克隆一份, 然后进行赋值.
 			newFormat := format.Clone()
 			newFormat.Erasure.This = format.Erasure.Sets[i][j]
 			if distributionAlgo != "" {
@@ -761,9 +782,11 @@ func initFormatErasure(ctx context.Context, storageDisks []StorageAPI, setCount,
 			if deploymentID != "" {
 				newFormat.ID = deploymentID
 			}
+			//节点磁盘计数.
 			hostCount[disk.Hostname()]++
 			formats[i*setDriveCount+j] = newFormat
 		}
+		//肯定有一个以上的节点.
 		if len(hostCount) > 0 {
 			var once sync.Once
 			for host, count := range hostCount {
@@ -789,6 +812,7 @@ func initFormatErasure(ctx context.Context, storageDisks []StorageAPI, setCount,
 	}
 
 	// Mark all root disks down
+	//获取所有的磁盘信息, 并过滤与根目录同在一个磁盘
 	markRootDisksAsDown(storageDisks, sErrs)
 
 	// Save formats `format.json` across all disks.
@@ -796,6 +820,7 @@ func initFormatErasure(ctx context.Context, storageDisks []StorageAPI, setCount,
 		return nil, err
 	}
 
+	//返回配置相同最多的那个配置.
 	return getFormatErasureInQuorum(formats)
 }
 

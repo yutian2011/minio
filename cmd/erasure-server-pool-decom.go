@@ -501,6 +501,7 @@ const (
 // in 'pool.bin', this is eventually used for decommissioning the pool.
 func (z *erasureServerPools) Init(ctx context.Context) error {
 	// Load rebalance metadata if present
+	//rebalance.bin
 	err := z.loadRebalanceMeta(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load rebalance data: %w", err)
