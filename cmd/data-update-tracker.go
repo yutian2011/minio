@@ -49,6 +49,7 @@ const (
 	dataUpdateTrackerSaveInterval = 5 * time.Minute
 )
 
+//就是bloomfilter的实现.
 var intDataUpdateTracker *dataUpdateTracker
 
 func init() {
@@ -201,15 +202,23 @@ func (d *dataUpdateTracker) latestWithDir(dir string) uint64 {
 // start will load the current data from the drives start collecting information and
 // start a saver goroutine.
 // All of these will exit when the context is canceled.
+//说白了, 这里的dataUpdateTracker是做什么用的?
 func (d *dataUpdateTracker) start(ctx context.Context, drives ...string) {
 	if len(drives) == 0 {
 		logger.LogIf(ctx, errors.New("dataUpdateTracker.start: No local drives specified"))
 		return
 	}
+	//drives 是本地的磁盘路径
+	//加载data tracking的数据, 加载旧的d.Saved 新的在d
+	//加载.minio.sys/bucket/.tracker.bin文件, 读取历史记录.
 	d.load(ctx, drives...)
+	//这里接收channel信息, 然后进行BloomFilter过滤.
+	//这里的bm是干啥的?
 	go d.startCollector(ctx)
 	// startSaver will unlock.
 	d.mu.Lock()
+	//定时保存d到文件中.
+	//主要就是序列化bm
 	go d.startSaver(ctx, dataUpdateTrackerSaveInterval, drives...)
 }
 
@@ -225,6 +234,7 @@ func (d *dataUpdateTracker) load(ctx context.Context, drives ...string) {
 	}
 	for _, drive := range drives {
 
+		//.minio.sys/bucket/.tracker.bin文件
 		cacheFormatPath := pathJoin(drive, dataUpdateTrackerFilename)
 		f, err := OpenFile(cacheFormatPath, readMode, 0o666)
 		if err != nil {
@@ -234,6 +244,7 @@ func (d *dataUpdateTracker) load(ctx context.Context, drives ...string) {
 			logger.LogIf(ctx, err)
 			continue
 		}
+		//本地磁盘上 相关的读取历史记录. 放入d结构体中.
 		err = d.deserialize(f, d.Saved)
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 			logger.LogIf(ctx, err)
@@ -276,6 +287,7 @@ func (d *dataUpdateTracker) startSaver(ctx context.Context, interval time.Durati
 			continue
 		}
 		d.Saved = UTCNow()
+		//序列化到buf中
 		err := d.serialize(&buf)
 		if d.debug {
 			console.Debugf(color.Green("dataUpdateTracker:")+" Saving: %v bytes, Current idx: %v\n", buf.Len(), d.Current.idx)
@@ -340,6 +352,7 @@ func (d *dataUpdateTracker) serialize(dst io.Writer) (err error) {
 	}
 
 	// Current
+	//当前index
 	binary.LittleEndian.PutUint64(tmp[:], d.Current.idx)
 	if _, err := o.Write(tmp[:]); err != nil {
 		if d.debug {
@@ -348,6 +361,7 @@ func (d *dataUpdateTracker) serialize(dst io.Writer) (err error) {
 		return err
 	}
 
+	//将当前的bf写入buffer.
 	if _, err := d.Current.bf.WriteTo(o); err != nil {
 		if d.debug {
 			logger.LogIf(ctx, err)
@@ -391,6 +405,7 @@ func (d *dataUpdateTracker) deserialize(src io.Reader, newerThan time.Time) erro
 	var tmp [8]byte
 
 	// Version
+	//先读取第一个, 判断版本.
 	if _, err := io.ReadFull(src, tmp[:1]); err != nil {
 		if d.debug {
 			if err != io.EOF {
@@ -410,6 +425,7 @@ func (d *dataUpdateTracker) deserialize(src io.Reader, newerThan time.Time) erro
 		return errors.New("dataUpdateTracker: Unknown data version")
 	}
 	// Timestamp.
+	//读取时间戳
 	if _, err := io.ReadFull(src, tmp[:8]); err != nil {
 		if d.debug {
 			logger.LogIf(ctx, err)
@@ -428,6 +444,7 @@ func (d *dataUpdateTracker) deserialize(src io.Reader, newerThan time.Time) erro
 		}
 		return err
 	}
+	//当前标识?
 	dst.Current.idx = binary.LittleEndian.Uint64(tmp[:])
 	dst.Current.bf = emptyBloomFilter()
 	if _, err := dst.Current.bf.ReadFrom(src); err != nil {
@@ -468,6 +485,7 @@ func (d *dataUpdateTracker) deserialize(src io.Reader, newerThan time.Time) erro
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.Current = dst.Current
+	//读取历史记录.
 	d.History = dst.History
 	d.Saved = dst.Saved
 	return nil

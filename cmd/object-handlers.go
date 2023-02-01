@@ -1814,6 +1814,7 @@ func (api objectAPIHandlers) PutObjectHandler(w http.ResponseWriter, r *http.Req
 	pReader := NewPutObjReader(rawReader)
 
 	var opts ObjectOptions
+	//这个opts参数有哪些.
 	opts, err = putOpts(ctx, r, bucket, object, metadata)
 	if err != nil {
 		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)

@@ -234,6 +234,7 @@ func (r *rebalanceMeta) load(ctx context.Context, store objectIO) error {
 	return r.loadWithOpts(ctx, store, ObjectOptions{})
 }
 
+//读取 rebalance.bin object 在.minio.sysbucket中读取.
 func (r *rebalanceMeta) loadWithOpts(ctx context.Context, store objectIO, opts ObjectOptions) error {
 	data, _, err := readConfigWithMetadata(ctx, store, rebalMetaName, opts)
 	if err != nil {

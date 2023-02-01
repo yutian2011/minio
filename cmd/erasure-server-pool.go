@@ -63,6 +63,7 @@ func (z *erasureServerPools) SinglePool() bool {
 }
 
 // Initialize new pool of erasure sets.
+//初始化erasureServerPools中erasureSets, 同时启动intDataUpdateTracker
 func newErasureServerPools(ctx context.Context, endpointServerPools EndpointServerPools) (ObjectLayer, error) {
 	var (
 		deploymentID       string
@@ -140,6 +141,7 @@ func newErasureServerPools(ctx context.Context, endpointServerPools EndpointServ
 	z.decommissionCancelers = make([]context.CancelFunc, len(z.serverPools))
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for {
+		//可能跟废弃serverpool 有关.
 		err := z.Init(ctx) // Initializes all pools.
 		if err != nil {
 			if !configRetriableErrors(err) {
@@ -158,8 +160,14 @@ func newErasureServerPools(ctx context.Context, endpointServerPools EndpointServ
 		drives = append(drives, localDrive.Endpoint().Path)
 	}
 
+	//全局本地磁盘赋值, 本地磁盘路径.
 	globalLocalDrives = localDrives
 	ctx, z.shutdown = context.WithCancel(ctx)
+	//这里面有个bloomfilter... 将内容读取定时序列化到.minio.sys/bucket/.tracker.bin
+	//问题来了, 这个bf是做什么用的?
+	//intDataUpdateTracker 就是bf的封装.
+	//这里就是启动了intDataUpdateTracker相关服务.
+	//感觉跟事件更新有关系.
 	go intDataUpdateTracker.start(ctx, drives...)
 	return z, nil
 }
@@ -965,12 +973,14 @@ func (z *erasureServerPools) PutObject(ctx context.Context, bucket string, objec
 
 	object = encodeDirObject(object)
 
+	//如果只有一个serverPool
 	if z.SinglePool() {
 		if !isMinioMetaBucketName(bucket) && !hasSpaceFor(getDiskInfos(ctx, z.serverPools[0].getHashedSet(object).getDisks()...), data.Size()) {
 			return ObjectInfo{}, toObjectErr(errDiskFull)
 		}
 		return z.serverPools[0].PutObject(ctx, bucket, object, data, opts)
 	}
+	//多个serverPool时处理方式.
 	if !opts.NoLock {
 		ns := z.NewNSLock(bucket, object)
 		lkctx, err := ns.GetLock(ctx, globalOperationTimeout)

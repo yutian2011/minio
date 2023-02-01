@@ -75,9 +75,11 @@ func (l *localLocker) Lock(ctx context.Context, args dsync.LockArgs) (reply bool
 		return false, fmt.Errorf("internal error: localLocker.Lock called with more than %d resources", maxDeleteList)
 	}
 
+	//加锁保证互斥.
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
+	//检查是否已经有锁了
 	if !l.canTakeLock(args.Resources...) {
 		// Not all locks can be taken on resources,
 		// reject it completely.
@@ -86,6 +88,7 @@ func (l *localLocker) Lock(ctx context.Context, args dsync.LockArgs) (reply bool
 
 	// No locks held on the all resources, so claim write
 	// lock on all resources at once.
+	//如果当前没有找到锁, 直接声明相关资源的锁.
 	for i, resource := range args.Resources {
 		l.lockMap[resource] = []lockRequesterInfo{
 			{

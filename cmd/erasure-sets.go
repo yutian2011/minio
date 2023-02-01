@@ -410,6 +410,7 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 	erasureLockers := map[string]dsync.NetLocker{}
 	for _, endpoint := range endpoints.Endpoints {
 		if _, ok := erasureLockers[endpoint.Host]; !ok {
+			//lockRESTClient
 			erasureLockers[endpoint.Host] = newLockAPI(endpoint)
 		}
 	}
@@ -605,6 +606,7 @@ func (s *erasureSets) NewNSLock(bucket string, objects ...string) RWLocker {
 	if len(objects) == 1 {
 		return s.getHashedSet(objects[0]).NewNSLock(bucket, objects...)
 	}
+	//根据input hash一个找到set,然后创建一个锁.
 	return s.getHashedSet("").NewNSLock(bucket, objects...)
 }
 
@@ -955,6 +957,7 @@ func (s *erasureSets) GetObjectNInfo(ctx context.Context, bucket, object string,
 
 // PutObject - writes an object to hashedSet based on the object name.
 func (s *erasureSets) PutObject(ctx context.Context, bucket string, object string, data *PutObjReader, opts ObjectOptions) (objInfo ObjectInfo, err error) {
+	//哈希对象名字
 	set := s.getHashedSet(object)
 	return set.PutObject(ctx, bucket, object, data, opts)
 }

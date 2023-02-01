@@ -219,6 +219,7 @@ func (dm *DRWMutex) lockBlocking(ctx context.Context, lockLossCallback func(), i
 			return false
 		default:
 			// Try to acquire the lock.
+			//尝试获取锁.
 			if locked = lock(ctx, dm.clnt, &locks, id, source, isReadLock, tolerance, quorum, dm.Names...); locked {
 				dm.m.Lock()
 
@@ -242,6 +243,7 @@ func (dm *DRWMutex) lockBlocking(ctx context.Context, lockLossCallback func(), i
 			if opts.RetryInterval > 0 {
 				lockRetryInterval = opts.RetryInterval
 			}
+			//获取锁不成功继续等待.
 			time.Sleep(time.Duration(dm.rng.Float64() * float64(lockRetryInterval)))
 		}
 	}
@@ -400,6 +402,7 @@ func lock(ctx context.Context, ds *Dsync, locks *[]string, id, source string, is
 	restClnts, owner := ds.GetLockers()
 
 	// Create buffered channel of size equal to total number of nodes.
+	//lockRESTClient
 	ch := make(chan Granted, len(restClnts))
 	var wg sync.WaitGroup
 
@@ -429,6 +432,8 @@ func lock(ctx context.Context, ds *Dsync, locks *[]string, id, source string, is
 
 			var locked bool
 			var err error
+			//这里的加锁等对应的是 server端 registerLockRESTHandlers响应.
+			//这里的逻辑就是对每个磁盘上发送加锁请求(检查当前磁盘上该文件有没有被锁, 没有被锁, 就). 然后等待响应.
 			if isReadLock {
 				if locked, err = c.RLock(context.Background(), args); err != nil {
 					log("dsync: Unable to call RLock failed with %s for %#v at %s\n", err, args, c)
@@ -454,6 +459,7 @@ func lock(ctx context.Context, ds *Dsync, locks *[]string, id, source string, is
 	i, locksFailed := 0, 0
 	done := false
 
+	//等待计算锁成功数量.
 	for ; i < len(restClnts); i++ { // Loop until we acquired all locks
 		select {
 		case grant := <-ch:
@@ -484,6 +490,7 @@ func lock(ctx context.Context, ds *Dsync, locks *[]string, id, source string, is
 	}
 
 	quorumLocked := checkQuorumLocked(locks, quorum) && locksFailed <= tolerance
+	//如果锁不成功则释放.
 	if !quorumLocked {
 		log("dsync: Unable to acquire lock in quorum %#v\n", args)
 		// Release all acquired locks without quorum.

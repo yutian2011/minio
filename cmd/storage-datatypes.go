@@ -309,6 +309,7 @@ func newFileInfo(object string, dataBlocks, parityBlocks int) (fi FileInfo) {
 		DataBlocks:   dataBlocks,
 		ParityBlocks: parityBlocks,
 		BlockSize:    blockSizeV2,
+		//打乱磁盘的顺序.
 		Distribution: hashOrder(object, dataBlocks+parityBlocks),
 	}
 	return fi

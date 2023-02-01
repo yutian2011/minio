@@ -35,6 +35,7 @@ func readConfigWithMetadata(ctx context.Context, store objectIO, configFile stri
 		lockType = noLock // erasureObjects.GetObjectNInfo honors lockType argument but not opts.NoLock.
 	}
 
+	//读取bucket中的object.
 	r, err := store.GetObjectNInfo(ctx, minioMetaBucket, configFile, nil, http.Header{}, lockType, opts)
 	if err != nil {
 		if isErrObjectNotFound(err) {

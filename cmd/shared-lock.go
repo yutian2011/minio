@@ -80,6 +80,7 @@ func newSharedLock(ctx context.Context, objAPI ObjectLayer, lockName string) *sh
 	l := &sharedLock{
 		lockContext: make(chan LockContext),
 	}
+	//main函数中传入的是 初始化erasureServerPools中erasureSets
 	go l.backgroundRoutine(ctx, objAPI, lockName)
 
 	return l

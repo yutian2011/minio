@@ -380,6 +380,8 @@ func initServer(ctx context.Context, newObject ObjectLayer) error {
 	t1 := time.Now()
 
 	// Once the config is fully loaded, initialize the new object layer.
+	//这里是设置全局objectLayer为 erasureServerPools
+
 	setObjectLayer(newObject)
 
 	// ****  WARNING ****
@@ -403,10 +405,14 @@ func initServer(ctx context.Context, newObject ObjectLayer) error {
 		// at a given time, this big transaction lock ensures this
 		// appropriately. This is also true for rotation of encrypted
 		// content.
+		//迁移的读写锁.
 		txnLk := newObject.NewNSLock(minioMetaBucket, minioConfigPrefix+"/transaction.lock")
 
 		// let one of the server acquire the lock, if not let them timeout.
 		// which shall be retried again by this loop.
+		//distLockInstance封装的DRWMutex
+		//核心逻辑在DRWMutex
+		//分布式加锁. transaction.lock
 		lkctx, err := txnLk.GetLock(ctx, lockTimeout)
 		if err != nil {
 			logger.Info("Waiting for all MinIO sub-systems to be initialized.. trying to acquire lock")
@@ -601,7 +607,7 @@ func serverMain(ctx *cli.Context) {
 		}
 	}
 
-	//创建ObjectLayer
+	//, 同时启动intDataUpdateTracker
 	newObject, err := newObjectLayer(GlobalContext, globalEndpoints)
 	if err != nil {
 		logFatalErrs(err, Endpoint{}, true)
@@ -610,17 +616,21 @@ func serverMain(ctx *cli.Context) {
 	xhttp.SetDeploymentID(globalDeploymentID)
 	xhttp.SetMinIOVersion(Version)
 
+	//创建一个读写锁.
 	globalLeaderLock = newSharedLock(GlobalContext, newObject, "leader.lock")
 
 	// Enable background operations for erasure coding
+	//初始化后台自动检查heal
 	initAutoHeal(GlobalContext, newObject)
 	initHealMRF(GlobalContext, newObject)
+	//检查过期
 	initBackgroundExpiry(GlobalContext, newObject)
 
 	if !globalCLIContext.StrictS3Compat {
 		logger.Info(color.RedBold("WARNING: Strict AWS S3 compatible incoming PUT, POST content payload validation is turned off, caution is advised do not use in production"))
 	}
 
+	//迁移加锁等逻辑.
 	if err = initServer(GlobalContext, newObject); err != nil {
 		var cerr config.Err
 		// For any config error, we don't need to drop into safe-mode
@@ -651,6 +661,7 @@ func serverMain(ctx *cli.Context) {
 	}
 
 	// Initialize users credentials and policies in background right after config has initialized.
+	//初始化iam
 	go func() {
 		globalIAMSys.Init(GlobalContext, newObject, globalEtcdClient, globalRefreshIAMInterval)
 
@@ -672,7 +683,9 @@ func serverMain(ctx *cli.Context) {
 	// Background all other operations such as initializing bucket metadata etc.
 	go func() {
 		// Initialize transition tier configuration manager
+		//副本
 		initBackgroundReplication(GlobalContext, newObject)
+		//迁移
 		initBackgroundTransition(GlobalContext, newObject)
 
 		globalBatchJobPool = newBatchJobPool(GlobalContext, newObject, 100)
@@ -690,6 +703,7 @@ func serverMain(ctx *cli.Context) {
 		}()
 
 		// Initialize quota manager.
+		//quota
 		globalBucketQuotaSys.Init(newObject)
 
 		initDataScanner(GlobalContext, newObject)

@@ -957,9 +957,24 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 
 	storageDisks := er.getDisks()
 
+	//为啥这里直接就分一半了?不是有配置参数的么?
+	//在ObjectOptions结构体中 对于配置文件使用最大纠删码方式.
+	// Use the maximum parity (N/2), used when saving server configuration files
+	//	MaxParity bool
 	parityDrives := len(storageDisks) / 2
+	//	opts.VersionID = vid
+	//	opts.Versioned = versioned
+	//	opts.VersionSuspended = versionSuspended
+	//	opts.MTime = mtime
+	//	opts.ReplicationSourceLegalholdTimestamp = lholdtimestmp
+	//	opts.ReplicationSourceRetentionTimestamp = retaintimestmp
+	//	opts.ReplicationSourceTaggingTimestamp = taggingtimestmp
+	//	opts.PreserveETag = etag
+	//	opts.WantChecksum = wantCRC
+	//如果不是配置,
 	if !opts.MaxParity {
 		// Get parity and data drive count based on storage class metadata
+		//根据字符串选择rrs还是standard
 		parityDrives = globalStorageClass.GetParityForSC(userDefined[xhttp.AmzStorageClass])
 		if parityDrives < 0 {
 			parityDrives = er.defaultParityCount
@@ -974,10 +989,12 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 
 		var wg sync.WaitGroup
 		for _, disk := range storageDisks {
+			//如果是空磁盘, 当做校验磁盘
 			if disk == nil {
 				atomicParityDrives.Inc()
 				continue
 			}
+			//如果没有在线也当做校验磁盘计数.
 			if !disk.IsOnline() {
 				atomicParityDrives.Inc()
 				continue
@@ -986,6 +1003,7 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 			go func(disk StorageAPI) {
 				defer wg.Done()
 				di, err := disk.DiskInfo(ctx)
+				//查询不到磁盘也作为校验磁盘计数.
 				if err != nil || di.ID == "" {
 					atomicParityDrives.Inc()
 				}
@@ -994,6 +1012,7 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 		wg.Wait()
 
 		parityDrives = int(atomicParityDrives.Load())
+		//查看校验磁盘的数量.
 		if parityDrives >= len(storageDisks)/2 {
 			parityDrives = len(storageDisks) / 2
 		}
@@ -1005,6 +1024,7 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 
 	// we now know the number of blocks this object needs for data and parity.
 	// writeQuorum is dataBlocks + 1
+	//确定写数量.
 	writeQuorum := dataDrives
 	if dataDrives == parityDrives {
 		writeQuorum++
@@ -1042,6 +1062,7 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 	var onlineDisks []StorageAPI
 	onlineDisks, partsMetadata = shuffleDisksAndPartsMetadata(storageDisks, partsMetadata, fi)
 
+	//根据erasure 数据块数量, 校验块数量, 块大小初始化erasure.
 	erasure, err := NewErasure(ctx, fi.Erasure.DataBlocks, fi.Erasure.ParityBlocks, fi.Erasure.BlockSize)
 	if err != nil {
 		return ObjectInfo{}, toObjectErr(err, bucket, object)
@@ -1053,13 +1074,17 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 	case size == 0:
 		buffer = make([]byte, 1) // Allocate atleast a byte to reach EOF
 	case size >= fi.Erasure.BlockSize || size == -1:
+		//如果传输的大小大于1Mb
+		//创建或利用 buffer
 		buffer = er.bp.Get()
 		defer er.bp.Put(buffer)
 	case size < fi.Erasure.BlockSize:
+		//对于小文件怎么处理的.
 		// No need to allocate fully blockSizeV1 buffer if the incoming data is smaller.
 		buffer = make([]byte, size, 2*size+int64(fi.Erasure.ParityBlocks+fi.Erasure.DataBlocks-1))
 	}
 
+	//如果buffer大于块大小.
 	if len(buffer) > int(fi.Erasure.BlockSize) {
 		buffer = buffer[:fi.Erasure.BlockSize]
 	}
@@ -1077,6 +1102,9 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 		}
 	}()
 
+	//计算切分的多少个文件.
+	//这里应该是文件大小/块大小(1mb)
+	//但是实际上文件35m, 只分了3个.
 	shardFileSize := erasure.ShardFileSize(data.Size())
 	writers := make([]io.Writer, len(onlineDisks))
 	var inlineBuffers []*bytes.Buffer

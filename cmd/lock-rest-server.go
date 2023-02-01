@@ -109,6 +109,7 @@ func (l *lockRESTServer) RefreshHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 // LockHandler - Acquires a lock.
+//怎么获取锁呢? 自己节点加锁, 然后判断是否已经有锁, 如果没有 则加锁, 返回true.
 func (l *lockRESTServer) LockHandler(w http.ResponseWriter, r *http.Request) {
 	if !l.IsValid(w, r) {
 		l.writeErrorResponse(w, errors.New("invalid request"))

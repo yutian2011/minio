@@ -160,6 +160,7 @@ type distLockInstance struct {
 }
 
 // Lock - block until write lock is taken or timeout has occurred.
+//获取锁逻辑.
 func (di *distLockInstance) GetLock(ctx context.Context, timeout *dynamicTimeout) (LockContext, error) {
 	lockSource := getSource(2)
 	start := UTCNow()

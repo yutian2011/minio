@@ -499,6 +499,7 @@ const (
 
 // Init() initializes pools and saves additional information about them
 // in 'pool.bin', this is eventually used for decommissioning the pool.
+//这个可能是跟废弃serverPool 有关.
 func (z *erasureServerPools) Init(ctx context.Context) error {
 	// Load rebalance metadata if present
 	//rebalance.bin

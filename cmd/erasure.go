@@ -70,6 +70,8 @@ type erasureObjects struct {
 
 // NewNSLock - initialize a new namespace RWLocker instance.
 func (er erasureObjects) NewNSLock(bucket string, objects ...string) RWLocker {
+	//这里获取的是初始化erasureObjects时的锁函数.
+	//在newErasureSets中进行的.
 	return er.nsMutex.NewNSLock(er.getLockers, bucket, objects...)
 }
 
