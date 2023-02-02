@@ -1105,6 +1105,7 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 	//计算切分的多少个文件.
 	//这里应该是文件大小/块大小(1mb)
 	//但是实际上文件35m, 只分了3个.
+	// 分片 * 每块磁盘上数据块大小(blocksize/datablocks) + 最后一块数据在每个磁盘上的大小.
 	shardFileSize := erasure.ShardFileSize(data.Size())
 	writers := make([]io.Writer, len(onlineDisks))
 	var inlineBuffers []*bytes.Buffer
@@ -1139,6 +1140,7 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 				sz = data.ActualSize()
 			}
 			inlineBuffers[i] = bytes.NewBuffer(make([]byte, 0, sz))
+			//streamingBitrotWriter
 			writers[i] = newStreamingBitrotWriterBuffer(inlineBuffers[i], DefaultBitrotAlgorithm, erasure.ShardSize())
 			continue
 		}
@@ -1160,6 +1162,7 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 		}
 		logger.LogIf(ctx, err)
 	}
+	//数据处理.
 	n, erasureErr := erasure.Encode(ctx, toEncode, writers, buffer, writeQuorum)
 	closeBitrotWriters(writers)
 	if erasureErr != nil {
@@ -1236,6 +1239,7 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 	}
 
 	// Rename the successfully written temporary object to final location.
+	//重命名.
 	onlineDisks, err = renameData(ctx, onlineDisks, minioMetaTmpBucket, tempObj, partsMetadata, bucket, object, writeQuorum)
 	for i := 0; i < len(onlineDisks); i++ {
 		if onlineDisks[i] != nil && onlineDisks[i].IsOnline() {

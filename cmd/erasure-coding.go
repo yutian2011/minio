@@ -50,7 +50,9 @@ func NewErasure(ctx context.Context, dataBlocks, parityBlocks int, blockSize int
 	}
 
 	e = Erasure{
+		//数据块数量
 		dataBlocks:   dataBlocks,
+		//校验块数量
 		parityBlocks: parityBlocks,
 		blockSize:    blockSize,
 	}
@@ -131,9 +133,14 @@ func (e *Erasure) ShardFileSize(totalLength int64) int64 {
 	if totalLength == -1 {
 		return -1
 	}
+	//多少个分片.
 	numShards := totalLength / e.blockSize
+	//最后一个分片的大小
 	lastBlockSize := totalLength % e.blockSize
+	//最后一个块大小 和 数据块数量.
+	//lastShardSize将最后一个块大小分成dataBlocks份.
 	lastShardSize := ceilFrac(lastBlockSize, int64(e.dataBlocks))
+	// 分片 * 每块磁盘上数据块大小(blocksize/datablocks) + 最后一块数据在每个磁盘上的大小.
 	return numShards*e.ShardSize() + lastShardSize
 }
 
