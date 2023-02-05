@@ -248,6 +248,7 @@ func shuffleDisksAndPartsMetadataByIndex(disks []StorageAPI, metaArr []FileInfo,
 func shuffleDisksAndPartsMetadata(disks []StorageAPI, partsMetadata []FileInfo, fi FileInfo) (shuffledDisks []StorageAPI, shuffledPartsMetadata []FileInfo) {
 	shuffledDisks = make([]StorageAPI, len(disks))
 	shuffledPartsMetadata = make([]FileInfo, len(partsMetadata))
+	//distribution 已经是打乱过一次下标
 	distribution := fi.Erasure.Distribution
 
 	init := fi.ModTime.IsZero()
@@ -265,7 +266,9 @@ func shuffleDisksAndPartsMetadata(disks []StorageAPI, partsMetadata []FileInfo, 
 		if !init && fi.XLV1 != partsMetadata[index].XLV1 {
 			continue
 		}
+		//打乱顺序的磁盘顺序.
 		blockIndex := distribution[index]
+		//因为blockIndex 在初始化的时候+1了. 所以这里作为数组index 需要-1.
 		shuffledPartsMetadata[blockIndex-1] = partsMetadata[index]
 		shuffledDisks[blockIndex-1] = disks[index]
 	}

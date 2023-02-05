@@ -80,15 +80,39 @@ func (e *Erasure) EncodeData(ctx context.Context, data []byte) ([][]byte, error)
 	if len(data) == 0 {
 		return make([][]byte, e.dataBlocks+e.parityBlocks), nil
 	}
+	//这里的encoder是?
+	//type Erasure struct {
+	//	encoder                  func() reedsolomon.Encoder
+	//在NewErasure中定义的. 具体函数实现, 就在当前代码后面.
+	//	e.encoder = func()  {
+	//		once.Do(func() {
+	//			e, err := reedsolomon.New(dataBlocks, parityBlocks, reedsolomon.WithAutoGoroutines(int(e.ShardSize())))
+	//			if err != nil {
+	//				// Error conditions should be checked above.
+	//				panic(err)
+	//			}
+	//			enc = e
+	//		})
+	//使用 里德-所罗门码 计算纠删码
+	//创建reedsolomon.New(dataBlocks, parityBlocks, reedsolomon.WithAutoGoroutines(int(e.ShardSize())))
+	//func New(dataShards, parityShards int, opts ...Option) (Encoder, error) {
+	//e.encoder()返回reedSolomon结构体.
+	// Split: 将数据分给指定的碎片, 并创建校验碎片.
+	//        如果数据大小不能被整除, 则最后一个碎片包含额外的0.
+	//        除了最后一个分片, 都不应该复制数据, 且后续不能被修改
+	//返回 [][]byte
 	encoded, err := e.encoder().Split(data)
 	if err != nil {
 		logger.LogIf(ctx, err)
 		return nil, err
 	}
+	//reedSolomon.Encode
+	//进行编码处理
 	if err = e.encoder().Encode(encoded); err != nil {
 		logger.LogIf(ctx, err)
 		return nil, err
 	}
+	//最后返回编码后的数据 [][]byte
 	return encoded, nil
 }
 

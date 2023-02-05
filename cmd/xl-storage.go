@@ -2160,6 +2160,11 @@ func skipAccessChecks(volume string) (ok bool) {
 }
 
 // RenameData - rename source path to destination path atomically, metadata and data directory.
+// srcVolume: .minio.sys
+//srcPath: 对象对应的uuid
+//fi: metadata信息
+//dstVolume: 目标bucket
+//dstPath: 对象名字.
 func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, fi FileInfo, dstVolume, dstPath string) (sign uint64, err error) {
 	defer func() {
 		if err != nil && !contextCanceled(ctx) && !errors.Is(err, errFileNotFound) {
@@ -2176,16 +2181,19 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 		}
 	}()
 
+	//源bucket的磁盘路径.
 	srcVolumeDir, err := s.getVolDir(srcVolume)
 	if err != nil {
 		return 0, err
 	}
 
+	//目标bucket磁盘路径
 	dstVolumeDir, err := s.getVolDir(dstVolume)
 	if err != nil {
 		return 0, err
 	}
 
+	//写入前检查
 	if !skipAccessChecks(srcVolume) {
 		// Stat a volume entry.
 		if err = Access(srcVolumeDir); err != nil {
@@ -2198,6 +2206,7 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 		}
 	}
 
+	//写入前检查
 	if !skipAccessChecks(dstVolume) {
 		if err = Access(dstVolumeDir); err != nil {
 			if osIsNotExist(err) {
@@ -2209,7 +2218,10 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 		}
 	}
 
+	//源文件 metadata路径
 	srcFilePath := pathutil.Join(srcVolumeDir, pathJoin(srcPath, xlStorageFormatFile))
+	//目标文件 metadata路径.
+	//bucket/object/xl.meta
 	dstFilePath := pathutil.Join(dstVolumeDir, pathJoin(dstPath, xlStorageFormatFile))
 
 	var srcDataPath string
@@ -2218,6 +2230,7 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 	if !fi.IsRemote() {
 		dataDir = retainSlash(fi.DataDir)
 	}
+	//dataDir: metadata文件夹不为空
 	if dataDir != "" {
 		srcDataPath = retainSlash(pathJoin(srcVolumeDir, srcPath, dataDir))
 		// make sure to always use path.Join here, do not use pathJoin as
@@ -2234,6 +2247,7 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 		return 0, err
 	}
 
+	//读取xl.meta文件
 	dstBuf, err := xioutil.ReadFile(dstFilePath)
 	if err != nil {
 		// handle situations when dstFilePath is 'file'
@@ -2264,7 +2278,9 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 	var xlMeta xlMetaV2
 	var legacyPreserved bool
 	if len(dstBuf) > 0 {
+		//不同版本的格式, xl.meta不一样.
 		if isXL2V1Format(dstBuf) {
+			//此时数据存储在xlMeta中
 			if err = xlMeta.Load(dstBuf); err != nil {
 				logger.LogIf(ctx, err)
 				// Data appears corrupt. Drop data.
@@ -2394,6 +2410,7 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 	}
 	sign = xxh3.Hash(sbuf.Bytes())
 
+	//xl.meta写入到缓存中.
 	dstBuf, err = xlMeta.AppendTo(metaDataPoolGet())
 	defer metaDataPoolPut(dstBuf)
 	if err != nil {
@@ -2406,6 +2423,7 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 	}
 
 	if srcDataPath != "" {
+		//xl.meta写入.minio.sys目录下.
 		if err = s.WriteAll(ctx, srcVolume, pathJoin(srcPath, xlStorageFormatFile), dstBuf); err != nil {
 			if legacyPreserved {
 				// Any failed rename calls un-roll previous transaction.
@@ -2416,6 +2434,7 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 		diskHealthCheckOK(ctx, err)
 
 		// renameAll only for objects that have xl.meta not saved inline.
+		//?
 		if len(fi.Data) == 0 && fi.Size > 0 {
 			s.moveToTrash(dstDataPath, true, false)
 			if healing {
@@ -2435,6 +2454,7 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 		}
 
 		// Commit meta-file
+		// metadata文件重命名.
 		if err = renameAll(srcFilePath, dstFilePath); err != nil {
 			if legacyPreserved {
 				// Any failed rename calls un-roll previous transaction.

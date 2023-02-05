@@ -83,6 +83,8 @@ func (e *Erasure) Encode(ctx context.Context, src io.Reader, writers []io.Writer
 
 	for {
 		var blocks [][]byte
+		//读取到buffer.
+		//src:  实际上 type Reader struct 封装的io.Reader
 		n, err := io.ReadFull(src, buf)
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 			logger.LogIf(ctx, err)
@@ -94,6 +96,8 @@ func (e *Erasure) Encode(ctx context.Context, src io.Reader, writers []io.Writer
 			break
 		}
 		// We take care of the situation where if n == 0 and total == 0 by creating empty data and parity files.
+		//读取的数据进行编码
+		//返回[][]byte
 		blocks, err = e.EncodeData(ctx, buf[:n])
 		if err != nil {
 			logger.LogIf(ctx, err)
@@ -101,7 +105,8 @@ func (e *Erasure) Encode(ctx context.Context, src io.Reader, writers []io.Writer
 			return 0, err
 		}
 
-		//
+		//parallelWriter 进行写入这些数据.
+		//写入磁盘,等待返回成功.
 		if err = writer.Write(ctx, blocks); err != nil {
 			logger.LogIf(ctx, err)
 			return 0, err
